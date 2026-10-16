@@ -1,0 +1,6 @@
+build/
+*.dat
+*.ogg
+Config.dat
+Save*.dat
+*.log
