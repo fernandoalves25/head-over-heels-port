@@ -74,12 +74,46 @@ O script espera em `/mnt/f/headover/tools/deps/dl/` (ou na pasta passada como ar
 o runtime do GCC embutido e só precisa do `SDL2.dll` ao lado. `dist/windows/` também traz
 `Jogar.bat` e `LEIA-ME.txt`.
 
+## Compilar para o R36S (aarch64, ArkOS) — no WSL, com Zig
+
+```bash
+scripts/build-r36s.sh               # gera dist/r36s/ports/ e dist/hoh-r36s.zip
+```
+
+Usa o Zig 0.14.1 (`~/tools/zig-x86_64-linux-0.14.1/zig`, ziglang.org) mirando
+`aarch64-linux-gnu.2.28`: o binário exige no máximo GLIBC_2.17, tem a libc++ embutida e usa o
+`libSDL2-2.0.so.0` do próprio aparelho (KMSDRM). libogg/libvorbis vão estáticos. Para linkar, o
+script gera um stub do SDL2 com o mesmo soname a partir dos headers do WSL.
+
+Instalar no aparelho: extraia `hoh-r36s.zip` na pasta `roms/` do cartão (fica
+`roms/ports/Head Over Heels (Nativo).sh` e `roms/ports/hohnative/`), copie `HoHOriginal.dat` e a
+pasta `Sound/` para `roms/ports/hohnative/gamedata/` e abra em Ports. Controle via gptokeyb
+(`hohnative/hoh.gptk`, mesmo mapeamento do port Box64); SELECT+START sai. Log em
+`roms/ports/hohnative/log.txt`.
+
+## Qualidade de imagem (PC)
+
+O jogo desenha em 640×480; o port amplia para a janela/tela inteira mantendo 4:3
+(`src/compat/video_scaler.cpp`). **F10** alterna e o modo fica salvo em `port.cfg`
+(ou `HOH_SCALER=...`):
+
+| Modo | Resultado |
+|---|---|
+| `smooth3x` (padrão) | bordas suavizadas (Scale3x/AdvMAME3x) + filtro |
+| `smooth2x` | idem com Scale2x/EPX |
+| `sharp` | pixels nítidos e uniformes em qualquer tamanho (pré-escala inteira + filtro) |
+| `nearest` | pixels crus esticados |
+| `integer` | só múltiplos inteiros, com tarjas |
+
+A janela abre com ~90% da altura da tela. No R36S (tela 640×480) a imagem é sempre 1:1.
+Teste sem janela: `scripts/scaler-test.sh` (captura a saída ampliada de cada modo).
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
-- Alt+Enter ou F11: alterna tela cheia.
+- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem.
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

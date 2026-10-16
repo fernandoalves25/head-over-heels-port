@@ -1,0 +1,7 @@
+Copie aqui, da pasta do jogo original (remake da Retrospec, 2003):
+
+  HoHOriginal.dat
+  Sound/        (Sound.dat, Theme.ogg, Game.ogg)
+
+O HoH.exe e o alleg40.dll NAO sao necessarios: este port e nativo.
+O Config.dat (opcoes/controles) e os saves sao gravados nesta pasta.

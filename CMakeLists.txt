@@ -33,15 +33,28 @@ if(HOH_DATA_DIR)
   add_test(NAME datatest COMMAND hoh-datatest "${HOH_DATA_DIR}")
 endif()
 
+option(HOH_STATIC_VORBIS "Linka libogg/libvorbis estaticos (builds Windows e R36S)" OFF)
+set(HOH_SDL2_INCLUDE_DIR "" CACHE PATH "Headers do SDL2 (pasta com SDL.h) quando nao ha sdl2-config.cmake")
+set(HOH_SDL2_LIBRARY "" CACHE FILEPATH "libSDL2-2.0.so para linkar (no R36S, um stub: em tempo de execucao vale o SDL do aparelho)")
+
 if(HOH_BUILD_GAME)
-  find_package(SDL2 REQUIRED)
+  if(HOH_SDL2_INCLUDE_DIR AND HOH_SDL2_LIBRARY)
+    add_library(SDL2::SDL2 SHARED IMPORTED)
+    set_target_properties(SDL2::SDL2 PROPERTIES
+      IMPORTED_LOCATION "${HOH_SDL2_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${HOH_SDL2_INCLUDE_DIR};${HOH_SDL2_INCLUDE_DIR}/..")
+  else()
+    find_package(SDL2 REQUIRED)
+  endif()
+  find_package(Threads REQUIRED)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(VORBISFILE REQUIRED IMPORTED_TARGET vorbisfile)
 
   # Camada de plataforma SDL2 (video, entrada, timers, audio)
-  add_library(hohplatform STATIC src/compat/platform_sdl.cpp src/compat/audio_sdl.cpp)
-  target_link_libraries(hohplatform PUBLIC hohcore PkgConfig::VORBISFILE)
-  if(MINGW)
+  add_library(hohplatform STATIC src/compat/platform_sdl.cpp src/compat/audio_sdl.cpp
+    src/compat/video_scaler.cpp)
+  target_link_libraries(hohplatform PUBLIC hohcore PkgConfig::VORBISFILE Threads::Threads)
+  if(MINGW OR HOH_STATIC_VORBIS)
     # libogg/libvorbis estaticos: precisa das dependencias privadas (pkg-config --static)
     target_link_libraries(hohplatform PUBLIC ${VORBISFILE_STATIC_LDFLAGS})
   endif()

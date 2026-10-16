@@ -1,6 +1,7 @@
 // Video, teclado, controles e timers do Allegro 4.0 implementados sobre SDL2.
 #include "compat/allegro.h"
 #include "compat/platform.h"
+#include "compat/video_scaler.h"
 
 #include <SDL.h>
 
@@ -30,12 +31,46 @@ namespace {
 
 SDL_Window *g_window = nullptr;
 SDL_Renderer *g_renderer = nullptr;
-SDL_Texture *g_texture = nullptr;
+VideoScaler g_scaler;
+ScaleMode g_scale_mode = ScaleMode::Smooth3x;  // padrao no PC (F10 alterna; port.cfg guarda)
+bool g_scaler_ready = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
 bool g_quit = false;
 bool g_fullscreen = false;
 std::deque<int> g_keybuf;
+
+// ------------------------------------------------------------------ port.cfg (opcoes do port)
+const char *kPortCfg = "port.cfg";
+
+void load_port_cfg() {
+    if (FILE *f = std::fopen(kPortCfg, "r")) {
+        char line[256];
+        while (std::fgets(line, sizeof line, f)) {
+            char key_[64] = "", val[128] = "";
+            if (std::sscanf(line, " %63[^= ] = %127s", key_, val) == 2 && std::strcmp(key_, "scaler") == 0)
+                scale_mode_from_name(val, &g_scale_mode);
+        }
+        std::fclose(f);
+    }
+    if (const char *env = std::getenv("HOH_SCALER")) scale_mode_from_name(env, &g_scale_mode);
+}
+
+void save_port_cfg() {
+    if (FILE *f = std::fopen(kPortCfg, "w")) {
+        std::fprintf(f, "# Opcoes do port (nao existem no jogo original)\n");
+        std::fprintf(f, "# scaler: sharp | smooth2x | smooth3x | nearest | integer   (F10 alterna)\n");
+        std::fprintf(f, "scaler = %s\n", scale_mode_name(g_scale_mode));
+        std::fclose(f);
+    }
+}
+
+void update_window_title() {
+    if (!g_window) return;
+    char t[128];
+    std::snprintf(t, sizeof t, "Head Over Heels   [F10 escala: %s | F11 tela cheia]", scale_mode_name(g_scale_mode));
+    SDL_SetWindowTitle(g_window, t);
+}
 
 // ------------------------------------------------------------------ teclado
 int map_scancode(SDL_Scancode s) {
@@ -229,6 +264,7 @@ struct ScriptKey { uint32_t at; int key; bool down_done = false, up_done = false
 struct ScriptShot { uint32_t at; std::string path; bool done = false; };
 std::vector<ScriptKey> g_script_keys;
 std::vector<ScriptShot> g_script_shots;
+std::vector<ScriptShot> g_script_scaled_shots;  // HOH_SCALED_SHOTS: quadro final ja ampliado
 uint32_t g_script_quit_at = 0, g_script_t0 = 0;
 bool g_script_loaded = false;
 
@@ -260,6 +296,7 @@ void script_load() {
     };
     parse(std::getenv("HOH_KEYS"), [](uint32_t at, const std::string &k) { g_script_keys.push_back({at, script_key_code(k)}); });
     parse(std::getenv("HOH_SHOTS"), [](uint32_t at, const std::string &f) { g_script_shots.push_back({at, f}); });
+    parse(std::getenv("HOH_SCALED_SHOTS"), [](uint32_t at, const std::string &f) { g_script_scaled_shots.push_back({at, f}); });
     if (const char *q = std::getenv("HOH_AUTOQUIT_MS")) g_script_quit_at = static_cast<uint32_t>(std::atol(q));
 }
 
@@ -307,19 +344,20 @@ void present_bitmap(BITMAP *bmp) {
         for (ScriptShot &s : g_script_shots)
             if (!s.done && t >= s.at) { s.done = true; save_bmp(bmp, s.path.c_str()); }
     }
-    if (!g_renderer || !g_texture || !bmp) return;
-    SDL_UpdateTexture(g_texture, nullptr, bmp->dat, bmp->w * static_cast<int>(sizeof(uint16_t)));
-    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-    SDL_RenderClear(g_renderer);
-    SDL_RenderCopy(g_renderer, g_texture, nullptr, nullptr);
-    SDL_RenderPresent(g_renderer);
+    if (!g_renderer || !g_scaler_ready || !bmp) return;
+    if (!g_script_scaled_shots.empty()) {
+        uint32_t t = SDL_GetTicks() - g_script_t0;
+        for (ScriptShot &s : g_script_scaled_shots)
+            if (!s.done && t >= s.at) { s.done = true; g_scaler.capture_next(s.path.c_str()); break; }
+    }
+    g_scaler.present(bmp, g_scale_mode);
 }
 
 void destroy_display() {
-    if (g_texture) SDL_DestroyTexture(g_texture);
+    g_scaler.shutdown();
+    g_scaler_ready = false;
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
     if (g_window) SDL_DestroyWindow(g_window);
-    g_texture = nullptr;
     g_renderer = nullptr;
     g_window = nullptr;
     if (screen) destroy_bitmap(screen);
@@ -397,14 +435,21 @@ int set_gfx_mode(int card, int w, int h, int, int) {
     const char *env = std::getenv("HOH_FULLSCREEN");
     g_fullscreen = handheld || (env ? std::atoi(env) != 0 : card == GFX_AUTODETECT_FULLSCREEN || card == GFX_DIRECTX);
 
-    // Janela: maior escala inteira que caiba em ~85% da area util da tela.
-    int scale = 1;
+    // Janela 4:3 com ~90% da altura util da tela (o scaler cuida de qualquer tamanho).
+    int win_w = w, win_h = h;
     SDL_Rect usable;
-    if (!handheld && SDL_GetDisplayUsableBounds(0, &usable) == 0)
-        while ((scale + 1) * w <= usable.w * 85 / 100 && (scale + 1) * h <= usable.h * 85 / 100) scale++;
+    if (!handheld && SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+        double sc = std::max(1.0, usable.h * 0.90 / h);
+        if (w * sc > usable.w * 0.95) sc = std::max(1.0, usable.w * 0.95 / w);
+        win_w = static_cast<int>(w * sc);
+        win_h = static_cast<int>(h * sc);
+    }
+    if (const char *ws = std::getenv("HOH_WINDOW_SIZE")) std::sscanf(ws, "%dx%d", &win_w, &win_h);  // testes
+    load_port_cfg();
+    if (handheld) g_scale_mode = ScaleMode::Nearest;  // tela 640x480 nativa: 1:1
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (g_fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-    g_window = SDL_CreateWindow("Head Over Heels", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w * scale, h * scale, flags);
+    g_window = SDL_CreateWindow("Head Over Heels", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
     if (!g_window) {
         std::snprintf(allegro_error, sizeof allegro_error, "%s", SDL_GetError());
         return -1;
@@ -416,15 +461,14 @@ int set_gfx_mode(int card, int w, int h, int, int) {
         destroy_display();
         return -1;
     }
-    SDL_RenderSetLogicalSize(g_renderer, w, h);  // mantem 4:3 com tarjas
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
-    g_texture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING, w, h);
-    if (!g_texture) {
+    g_scaler_ready = g_scaler.init(g_renderer, w, h);
+    if (!g_scaler_ready) {
         std::snprintf(allegro_error, sizeof allegro_error, "%s", SDL_GetError());
         destroy_display();
         return -1;
     }
     if (handheld) SDL_ShowCursor(SDL_DISABLE);
+    update_window_title();
     screen = create_bitmap(w, h);
     g_shown = screen;
     g_driver.id = card;
@@ -479,6 +523,16 @@ void platform_pump(void) {
                 }
                 if (e.key.keysym.sym == SDLK_F11) {
                     if (!e.key.repeat) platform_toggle_fullscreen();
+                    break;
+                }
+                if (e.key.keysym.sym == SDLK_F10 && !platform_is_handheld()) {  // port: modo de escala
+                    if (!e.key.repeat) {
+                        g_scale_mode = static_cast<ScaleMode>((static_cast<int>(g_scale_mode) + 1) %
+                                                              static_cast<int>(ScaleMode::Count));
+                        save_port_cfg();
+                        update_window_title();
+                        present_bitmap(g_shown);
+                    }
                     break;
                 }
                 if (int k = map_scancode(e.key.keysym.scancode)) {

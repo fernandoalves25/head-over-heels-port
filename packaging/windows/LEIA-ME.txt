@@ -1,0 +1,32 @@
+HEAD OVER HEELS - port nativo (Windows x64)
+============================================
+
+Como jogar
+- Clique duas vezes em Jogar.bat (usa os dados em F:\headover\HeadOverHeels), ou
+- copie hoh.exe e SDL2.dll para a pasta do jogo original (onde fica o HoHOriginal.dat)
+  e abra o hoh.exe direto.
+
+Teclas
+- Setas, ENTER, ESC como no jogo original (teclas redefiniveis em CHANGE CONTROLS).
+- F10: muda o modo de escala da imagem (fica salvo em port.cfg):
+    smooth3x  bordas suavizadas em 3x (padrao)
+    smooth2x  bordas suavizadas em 2x
+    sharp     pixels nitidos e uniformes em qualquer tamanho
+    nearest   pixels crus esticados
+    integer   so multiplos inteiros (pixel perfeito, com tarjas)
+- F11 ou Alt+Enter: alterna janela / tela cheia (a imagem ocupa a tela toda em 4:3).
+- Controles USB/XInput funcionam como joystick (ative em CHANGE CONTROLS).
+
+Linha de comando
+  hoh.exe [--data PASTA] [--fullscreen | --window] [-r0..-r4] [-b]
+
+Estado atual
+- Abertura, tela-titulo, todos os menus, opcoes, sons e musica ja sao o codigo do jogo original
+  portado. O jogo em si (salas e jogabilidade) ainda esta sendo portado: NEW GAME/OLD GAME
+  mostram um aviso e voltam ao menu.
+- O Config.dat gravado e compativel com o HoH.exe original.
+
+Arquivos
+- hoh.exe        o jogo
+- hoh-viewer.exe visualizador dos sprites/sons do HoHOriginal.dat
+- SDL2.dll       biblioteca SDL 2.32.10 (zlib license, libsdl.org)

@@ -1,0 +1,22 @@
+# Head Over Heels - controle (teclas padrao do jogo original)
+# Mover = direcional/analogico (setas), A = Pular/Teleporte (Space), B = Pegar/Largar (Enter),
+# X = Atirar rosquinha (LCtrl), Y = Trocar Head/Heels (RCtrl), L1/R1 = Pular+Pegar (M),
+# Start/Select = Menu/Voltar (Esc). Segure SELECT+START para sair.
+
+up = up
+down = down
+left = left
+right = right
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right
+
+a = space
+b = enter
+x = leftctrl
+y = rightctrl
+l1 = m
+r1 = m
+start = esc
+back = esc

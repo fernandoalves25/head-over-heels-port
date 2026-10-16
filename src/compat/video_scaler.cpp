@@ -1,0 +1,193 @@
+#include "compat/video_scaler.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+
+namespace {
+
+const char *kNames[] = {"sharp", "smooth2x", "smooth3x", "nearest", "integer"};
+
+// Scale2x / EPX:   A
+//                C P B   ->  E0 E1
+//                  D         E2 E3
+void scale2x(const uint16_t *src, int w, int h, uint16_t *dst) {
+    const int ow = w * 2;
+    for (int y = 0; y < h; y++) {
+        const uint16_t *row = src + y * w;
+        const uint16_t *up = y > 0 ? row - w : row;
+        const uint16_t *dn = y < h - 1 ? row + w : row;
+        uint16_t *o0 = dst + (y * 2) * ow, *o1 = o0 + ow;
+        for (int x = 0; x < w; x++) {
+            uint16_t P = row[x], A = up[x], D = dn[x];
+            uint16_t C = x > 0 ? row[x - 1] : P, B = x < w - 1 ? row[x + 1] : P;
+            uint16_t e0 = P, e1 = P, e2 = P, e3 = P;
+            if (C == A && C != D && A != B) e0 = A;
+            if (A == B && A != C && B != D) e1 = B;
+            if (D == C && D != B && C != A) e2 = C;
+            if (B == D && B != A && D != C) e3 = D;
+            o0[x * 2] = e0; o0[x * 2 + 1] = e1;
+            o1[x * 2] = e2; o1[x * 2 + 1] = e3;
+        }
+    }
+}
+
+// Scale3x / AdvMAME3x:  A B C
+//                       D E F   ->  3x3
+//                       G H I
+void scale3x(const uint16_t *src, int w, int h, uint16_t *dst) {
+    const int ow = w * 3;
+    for (int y = 0; y < h; y++) {
+        const uint16_t *row = src + y * w;
+        const uint16_t *up = y > 0 ? row - w : row;
+        const uint16_t *dn = y < h - 1 ? row + w : row;
+        uint16_t *o0 = dst + (y * 3) * ow, *o1 = o0 + ow, *o2 = o1 + ow;
+        for (int x = 0; x < w; x++) {
+            int xl = x > 0 ? x - 1 : x, xr = x < w - 1 ? x + 1 : x;
+            uint16_t A = up[xl], B = up[x], C = up[xr], D = row[xl], E = row[x], F = row[xr];
+            uint16_t G = dn[xl], H = dn[x], I = dn[xr];
+            uint16_t e[9] = {E, E, E, E, E, E, E, E, E};
+            if (B != H && D != F) {
+                e[0] = D == B ? D : E;
+                e[1] = (D == B && E != C) || (B == F && E != A) ? B : E;
+                e[2] = B == F ? F : E;
+                e[3] = (D == B && E != G) || (D == H && E != A) ? D : E;
+                e[5] = (B == F && E != I) || (H == F && E != C) ? F : E;
+                e[6] = D == H ? D : E;
+                e[7] = (D == H && E != I) || (H == F && E != G) ? H : E;
+                e[8] = H == F ? F : E;
+            }
+            for (int k = 0; k < 3; k++) {
+                o0[x * 3 + k] = e[k];
+                o1[x * 3 + k] = e[3 + k];
+                o2[x * 3 + k] = e[6 + k];
+            }
+        }
+    }
+}
+
+}  // namespace
+
+const char *scale_mode_name(ScaleMode m) {
+    int i = static_cast<int>(m);
+    return (i >= 0 && i < static_cast<int>(ScaleMode::Count)) ? kNames[i] : "sharp";
+}
+
+bool scale_mode_from_name(const char *name, ScaleMode *out) {
+    for (int i = 0; i < static_cast<int>(ScaleMode::Count); i++)
+        if (name && std::strcmp(name, kNames[i]) == 0) {
+            *out = static_cast<ScaleMode>(i);
+            return true;
+        }
+    return false;
+}
+
+SDL_Texture *VideoScaler::make_texture(int w, int h, int access, bool linear) {
+    // O filtro de cada textura vem da dica no momento da criacao (funciona em qualquer SDL2).
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, linear ? "linear" : "nearest");
+    Uint32 fmt = access == SDL_TEXTUREACCESS_TARGET ? SDL_PIXELFORMAT_ARGB8888 : SDL_PIXELFORMAT_RGB565;
+    return SDL_CreateTexture(r_, fmt, access, w, h);
+}
+
+bool VideoScaler::init(SDL_Renderer *r, int w, int h) {
+    shutdown();
+    r_ = r;
+    w_ = w;
+    h_ = h;
+    src_ = make_texture(w, h, SDL_TEXTUREACCESS_STREAMING, false);
+    targets_ok_ = SDL_RenderTargetSupported(r) == SDL_TRUE;
+    return src_ != nullptr;
+}
+
+void VideoScaler::shutdown() {
+    for (SDL_Texture **t : {&src_, &prescaled_, &epx_})
+        if (*t) {
+            SDL_DestroyTexture(*t);
+            *t = nullptr;
+        }
+    prescale_k_ = epx_k_ = 0;
+}
+
+void VideoScaler::fit(int out_w, int out_h, double *scale, SDL_Rect *dst) const {
+    double s = std::min(static_cast<double>(out_w) / w_, static_cast<double>(out_h) / h_);
+    int dw = static_cast<int>(std::lround(w_ * s)), dh = static_cast<int>(std::lround(h_ * s));
+    *scale = s;
+    *dst = {(out_w - dw) / 2, (out_h - dh) / 2, dw, dh};
+}
+
+void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
+    if (!r_ || !src_ || !frame) return;
+    int ow = 0, oh = 0;
+    SDL_GetRendererOutputSize(r_, &ow, &oh);
+    double s;
+    SDL_Rect dst;
+    fit(ow, oh, &s, &dst);
+
+    SDL_SetRenderTarget(r_, nullptr);
+    SDL_SetRenderDrawColor(r_, 0, 0, 0, 255);
+    SDL_RenderClear(r_);
+
+    if (mode == ScaleMode::Smooth2x || mode == ScaleMode::Smooth3x) {
+        int k = mode == ScaleMode::Smooth2x ? 2 : 3;
+        if (epx_k_ != k) {
+            if (epx_) SDL_DestroyTexture(epx_);
+            epx_ = make_texture(w_ * k, h_ * k, SDL_TEXTUREACCESS_STREAMING, true);
+            epx_k_ = epx_ ? k : 0;
+            epx_buf_.assign(static_cast<size_t>(w_ * k) * h_ * k, 0);
+        }
+        if (epx_) {
+            if (k == 2) scale2x(frame->dat, w_, h_, epx_buf_.data());
+            else scale3x(frame->dat, w_, h_, epx_buf_.data());
+            SDL_UpdateTexture(epx_, nullptr, epx_buf_.data(), w_ * k * static_cast<int>(sizeof(uint16_t)));
+            SDL_RenderCopy(r_, epx_, nullptr, &dst);
+            finish();
+            return;
+        }
+        mode = ScaleMode::Sharp;
+    }
+
+    SDL_UpdateTexture(src_, nullptr, frame->dat, frame->w * static_cast<int>(sizeof(uint16_t)));
+    if (mode == ScaleMode::Integer) {
+        int k = std::max(1, static_cast<int>(std::floor(s)));
+        SDL_Rect d = {(ow - w_ * k) / 2, (oh - h_ * k) / 2, w_ * k, h_ * k};
+        SDL_RenderCopy(r_, src_, nullptr, &d);
+    } else if (mode == ScaleMode::Sharp && targets_ok_) {
+        // "sharp bilinear": vizinho mais proximo ate o multiplo inteiro logo acima da escala
+        // final e filtro linear no resto; nenhum pixel fica maior que o vizinho.
+        int k = std::clamp(static_cast<int>(std::ceil(s - 1e-6)), 1, 8);
+        if (prescale_k_ != k) {
+            if (prescaled_) SDL_DestroyTexture(prescaled_);
+            prescaled_ = make_texture(w_ * k, h_ * k, SDL_TEXTUREACCESS_TARGET, true);
+            prescale_k_ = prescaled_ ? k : 0;
+            if (!prescaled_) targets_ok_ = false;
+        }
+        if (prescaled_ && SDL_SetRenderTarget(r_, prescaled_) == 0) {
+            SDL_RenderCopy(r_, src_, nullptr, nullptr);
+            SDL_SetRenderTarget(r_, nullptr);
+            SDL_RenderCopy(r_, prescaled_, nullptr, &dst);
+        } else {
+            SDL_SetRenderTarget(r_, nullptr);
+            SDL_RenderCopy(r_, src_, nullptr, &dst);
+        }
+    } else {
+        SDL_RenderCopy(r_, src_, nullptr, &dst);
+    }
+    finish();
+}
+
+void VideoScaler::finish() {
+    if (!capture_path_.empty()) {
+        int ow = 0, oh = 0;
+        SDL_GetRendererOutputSize(r_, &ow, &oh);
+        std::vector<uint32_t> px(static_cast<size_t>(ow) * oh);
+        if (SDL_RenderReadPixels(r_, nullptr, SDL_PIXELFORMAT_ARGB8888, px.data(), ow * 4) == 0) {
+            SDL_Surface *s = SDL_CreateRGBSurfaceWithFormatFrom(px.data(), ow, oh, 32, ow * 4, SDL_PIXELFORMAT_ARGB8888);
+            if (s) {
+                SDL_SaveBMP(s, capture_path_.c_str());
+                SDL_FreeSurface(s);
+            }
+        }
+        capture_path_.clear();
+    }
+    SDL_RenderPresent(r_);
+}

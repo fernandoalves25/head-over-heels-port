@@ -41,6 +41,7 @@ grep -E "warning:" build/windows.log | grep -v "Wunused-result\|format-truncatio
 DIST="$ROOT/dist/windows"
 rm -rf "$DIST" && mkdir -p "$DIST"
 cp build/windows/hoh.exe build/windows/hoh-viewer.exe "$PREFIX/bin/SDL2.dll" "$DIST/"
+cp packaging/windows/* "$DIST/"
 x86_64-w64-mingw32-strip "$DIST/hoh.exe" "$DIST/hoh-viewer.exe"
 echo "== DLLs importadas por hoh.exe:"
 x86_64-w64-mingw32-objdump -p "$DIST/hoh.exe" | grep "DLL Name" | sort -u
