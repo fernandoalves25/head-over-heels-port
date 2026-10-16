@@ -28,8 +28,16 @@ Verificado no Linux x86_64 (WSL Ubuntu 24.04, SDL 2.30, vorbisfile 1.3.7): build
 `hoh-datatest` OK, `scripts/smoke-test.sh` (sem janela, capturas em `build/smoke/`) OK e
 janela real via WSLg a ~60 FPS.
 
-Próximo: portar a lógica do jogo (`../HeadOverHeels/re/decomp/game.c`, 307 funções);
-builds Windows x64 e aarch64 (R36S).
+Marco 2 — front-end original portado (`src/game/`, 70 funções do `HoH.exe`, cada uma com o
+endereço original no comentário): `game_main` e o laço de passo fixo (30 ticks/s), abertura,
+tela-título, menus (opções, controles, som), fundo de água, transições, fontes em bitmap e
+recoloração HSL, efeitos sonoros por categoria, música, `Config.dat` (mesmo formato do original).
+As globais do jogo são geradas com os valores iniciais do `.data` do exe
+(`../HeadOverHeels/re/port/gen_globals.py`). O motor isométrico (salas e jogabilidade) ainda é
+stub (`src/game/pending_stubs.cpp`): a cena da sala na abertura fica vazia e "PLAY THE GAME"
+ainda não entra no jogo.
+
+Próximo: portar o motor isométrico e a jogabilidade; builds Windows x64, aarch64 (R36S) e Web.
 
 ## Compilar (Linux / WSL)
 
@@ -43,8 +51,15 @@ ctest --test-dir build/linux        # valida o leitor contra os dados originais
 
 Só o núcleo e o teste (sem SDL): `-DHOH_BUILD_GAME=OFF`.
 
-Atalhos: `scripts/build-linux.sh [pasta_do_jogo]` (configura, compila e roda o teste) e
-`scripts/smoke-test.sh [pasta_do_jogo]` (roda o visualizador sem janela e salva capturas).
+Atalhos: `scripts/build-linux.sh [pasta_do_jogo]` (configura, compila e roda o teste),
+`scripts/game-smoke.sh [pasta_do_jogo]` (roda o jogo sem janela com teclas roteirizadas e salva
+capturas em `build/game-smoke/`), `scripts/smoke-test.sh` (idem para o visualizador) e
+`scripts/check-syntax.sh [arquivos]`.
+
+Executáveis: `hoh` (o jogo) e `hoh-viewer` (visualizador de sprites/sons do marco 1).
+
+Teste automático (variáveis de ambiente): `HOH_KEYS="3000:ENTER;6500:DOWN"` aperta teclas,
+`HOH_SHOTS="5000:tela.bmp"` salva o quadro, `HOH_AUTOQUIT_MS=12000` encerra.
 
 ## Rodar
 

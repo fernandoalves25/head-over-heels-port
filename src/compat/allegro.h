@@ -64,6 +64,9 @@ void blit(BITMAP *source, BITMAP *dest, int source_x, int source_y, int dest_x, 
 void masked_blit(BITMAP *source, BITMAP *dest, int source_x, int source_y, int dest_x,
                  int dest_y, int width, int height);
 void draw_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y);
+void draw_sprite_h_flip(BITMAP *bmp, BITMAP *sprite, int x, int y);
+void hline(BITMAP *bmp, int x1, int y, int x2, int color);
+void vline(BITMAP *bmp, int x, int y1, int y2, int color);
 void stretch_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y, int w, int h);
 
 // FBlend (lib de terceiros linkada estaticamente no HoH.exe; ver FORMATOS.md §6):
@@ -89,7 +92,7 @@ int text_height(const FONT *f);
 #define GFX_DIRECTX_WIN    AL_ID('D', 'X', 'W', 'N')
 #define GFX_GDI            AL_ID('G', 'D', 'I', 'B')
 
-#define GFX_CAN_TRIPLE_BUFFER 0x00000010
+#define GFX_CAN_TRIPLE_BUFFER 0x00000002  // Allegro 4.0 (o HoH.exe testa gfx_capabilities & 2)
 
 struct GFX_DRIVER {
     int id;
@@ -97,6 +100,7 @@ struct GFX_DRIVER {
     const char *desc;
     const char *ascii_name;
     int windowed;
+    int w, h;  // resolucao atual (o HoH.exe le gfx_driver->w/h em +0x68/+0x6c)
 };
 
 extern BITMAP *screen;

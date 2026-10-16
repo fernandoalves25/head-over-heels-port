@@ -10,7 +10,7 @@ export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 fail=0
 run() {
   local name="$1"; shift
-  if timeout 30 ./build/linux/hoh --data "$DATA" --frames 20 --shot "$OUT/$name.bmp" "$@" > "$OUT/$name.log" 2>&1; then
+  if timeout 30 ./build/linux/hoh-viewer --data "$DATA" --frames 20 --shot "$OUT/$name.bmp" "$@" > "$OUT/$name.log" 2>&1; then
     echo "ok   $name ($(stat -c %s "$OUT/$name.bmp") bytes)"
   else
     echo "FALHOU $name (exit $?)"; tail -5 "$OUT/$name.log"; fail=1

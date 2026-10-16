@@ -155,6 +155,25 @@ void draw_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y) {
     masked_blit(sprite, bmp, 0, 0, x, y, sprite->w, sprite->h);
 }
 
+// Espelhado na horizontal (vtable +0x4c no HoH.exe), com mascara.
+void draw_sprite_h_flip(BITMAP *bmp, BITMAP *sprite, int x, int y) {
+    if (!bmp || !sprite) return;
+    ClipRect c = clip_of(bmp);
+    int x0 = std::max(x, c.l), x1 = std::min(x + sprite->w, c.r);
+    int y0 = std::max(y, c.t), y1 = std::min(y + sprite->h, c.b);
+    for (int dy = y0; dy < y1; dy++) {
+        const uint16_t *src = sprite->line[dy - y];
+        uint16_t *dst = bmp->line[dy];
+        for (int dx = x0; dx < x1; dx++) {
+            uint16_t p = src[sprite->w - 1 - (dx - x)];
+            if (p != MASK_COLOR_16) dst[dx] = p;
+        }
+    }
+}
+
+void hline(BITMAP *bmp, int x1, int y, int x2, int color) { rectfill(bmp, x1, y, x2, y, color); }
+void vline(BITMAP *bmp, int x, int y1, int y2, int color) { rectfill(bmp, x, y1, x, y2, color); }
+
 void stretch_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y, int w, int h) {
     if (!bmp || !sprite || w <= 0 || h <= 0) return;
     ClipRect c = clip_of(bmp);
@@ -170,26 +189,38 @@ void stretch_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y, int w, int h) {
     }
 }
 
-// fact 0..255: 0 = so o destino, 255 = so a origem.
+// Semantica do FBlend em 16 bpp (HoH.exe 0x42a510 / 0x429d10): a opacidade 0..255 vira
+// f = (fact + 7) >> 3, em 32 niveis; pixels com a cor de mascara nao sao desenhados.
+
+// 0x42a510: f == 32 -> masked_blit; f == 16 -> media exata por mascara de bits;
+// senao, por canal: d + ((s - d) * f >> 5).
 void fblend_trans(BITMAP *src, BITMAP *dst, int x, int y, int fact) {
     if (!src || !dst) return;
-    fact = std::clamp(fact, 0, 255);
-    if (fact == 255) { draw_sprite(dst, src, x, y); return; }
-    if (fact == 0) return;
-    sprite_op(src, dst, x, y, [fact](uint16_t s, uint16_t d) {
-        auto mix = [fact](int a, int b) { return b + (((a - b) * fact) >> 8); };
+    int f = (std::clamp(fact, 0, 255) + 7) >> 3;
+    if (f >= 32) { draw_sprite(dst, src, x, y); return; }
+    if (f <= 0) return;
+    if (f == 16) {
+        sprite_op(src, dst, x, y, [](uint16_t s, uint16_t d) {
+            return static_cast<uint16_t>(((d >> 1) & 0x7BEF) + ((s >> 1) & 0x7BEF) + (d & s & 0x0821));
+        });
+        return;
+    }
+    sprite_op(src, dst, x, y, [f](uint16_t s, uint16_t d) {
+        auto mix = [f](int a, int b) { return b + (((a - b) * f) >> 5); };
         return pack565(mix(r5(s), r5(d)), mix(g6(s), g6(d)), mix(b5(s), b5(d)));
     });
 }
 
+// 0x429d10: soma saturada; o verde usa so os 5 bits altos (mascara 0x7C0), como o FBlend.
 void fblend_add(BITMAP *src, BITMAP *dst, int x, int y, int fact) {
     if (!src || !dst) return;
-    fact = std::clamp(fact, 0, 255);
-    if (fact == 0) return;
-    sprite_op(src, dst, x, y, [fact](uint16_t s, uint16_t d) {
-        return pack565(std::min(31, r5(d) + ((r5(s) * fact) >> 8)),
-                       std::min(63, g6(d) + ((g6(s) * fact) >> 8)),
-                       std::min(31, b5(d) + ((b5(s) * fact) >> 8)));
+    int f = (std::clamp(fact, 0, 255) + 7) >> 3;
+    if (f <= 0) return;
+    f = std::min(f, 32);
+    sprite_op(src, dst, x, y, [f](uint16_t s, uint16_t d) {
+        int sr = (r5(s) * f) >> 5, sg = (((s >> 6) & 31) * f) >> 5, sb = (b5(s) * f) >> 5;
+        int g = std::min(31, ((d >> 6) & 31) + sg);
+        return pack565(std::min(31, r5(d) + sr), g << 1, std::min(31, b5(d) + sb));
     });
 }
 

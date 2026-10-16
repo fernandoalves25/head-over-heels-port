@@ -13,6 +13,7 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#include <string>
 #include <vector>
 
 // ------------------------------------------------------------------ estado global do Allegro
@@ -31,7 +32,7 @@ SDL_Window *g_window = nullptr;
 SDL_Renderer *g_renderer = nullptr;
 SDL_Texture *g_texture = nullptr;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
-GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1};
+GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
 bool g_quit = false;
 bool g_fullscreen = false;
 std::deque<int> g_keybuf;
@@ -219,7 +220,93 @@ void timer_loop() {
     }
 }
 
+// ------------------------------------------------------------------ roteiro de teste automatico
+// Variaveis de ambiente (para testar sem ninguem no teclado, inclusive com SDL_VIDEODRIVER=dummy):
+//   HOH_KEYS="3000:ENTER;3600:DOWN"   (ou separado por virgula) aperta a tecla no instante (ms) e solta 120 ms depois
+//   HOH_SHOTS="2500:a.bmp;5000:b.bmp" salva o quadro apresentado no instante (ms)
+//   HOH_AUTOQUIT_MS=8000              pede para sair depois desse tempo
+struct ScriptKey { uint32_t at; int key; bool down_done = false, up_done = false; };
+struct ScriptShot { uint32_t at; std::string path; bool done = false; };
+std::vector<ScriptKey> g_script_keys;
+std::vector<ScriptShot> g_script_shots;
+uint32_t g_script_quit_at = 0, g_script_t0 = 0;
+bool g_script_loaded = false;
+
+int script_key_code(const std::string &n) {
+    static const std::pair<const char *, int> names[] = {
+        {"ENTER", KEY_ENTER}, {"ESC", KEY_ESC}, {"UP", KEY_UP}, {"DOWN", KEY_DOWN}, {"LEFT", KEY_LEFT},
+        {"RIGHT", KEY_RIGHT}, {"SPACE", KEY_SPACE}, {"LCTRL", KEY_LCONTROL}, {"RCTRL", KEY_RCONTROL}};
+    for (auto &p : names)
+        if (n == p.first) return p.second;
+    if (n.size() == 1 && n[0] >= 'A' && n[0] <= 'Z') return KEY_A + (n[0] - 'A');
+    return std::atoi(n.c_str());
+}
+
+void script_load() {
+    g_script_loaded = true;
+    g_script_t0 = SDL_GetTicks();
+    auto parse = [](const char *env, auto &&fn) {
+        if (!env) return;
+        std::string s = env;
+        size_t p = 0;
+        while (p < s.size()) {
+            size_t e = s.find_first_of(";,", p);  // ';' ou ',' (o wsl.exe quebra comandos no ';')
+            std::string item = s.substr(p, e == std::string::npos ? std::string::npos : e - p);
+            size_t c = item.find(':');
+            if (c != std::string::npos) fn(static_cast<uint32_t>(std::atol(item.substr(0, c).c_str())), item.substr(c + 1));
+            if (e == std::string::npos) break;
+            p = e + 1;
+        }
+    };
+    parse(std::getenv("HOH_KEYS"), [](uint32_t at, const std::string &k) { g_script_keys.push_back({at, script_key_code(k)}); });
+    parse(std::getenv("HOH_SHOTS"), [](uint32_t at, const std::string &f) { g_script_shots.push_back({at, f}); });
+    if (const char *q = std::getenv("HOH_AUTOQUIT_MS")) g_script_quit_at = static_cast<uint32_t>(std::atol(q));
+}
+
+void script_tick() {
+    if (!g_script_loaded) script_load();
+    uint32_t t = SDL_GetTicks() - g_script_t0;
+    for (ScriptKey &k : g_script_keys) {
+        if (!k.down_done && t >= k.at && k.key > 0 && k.key < KEY_MAX) {
+            k.down_done = true;
+            key[k.key] = 1;
+            int ascii = k.key == KEY_ENTER ? 13 : k.key == KEY_ESC ? 27 : k.key == KEY_SPACE ? ' ' : 0;
+            g_keybuf.push_back((k.key << 8) | ascii);
+        }
+        if (k.down_done && !k.up_done && t >= k.at + 120) {
+            k.up_done = true;
+            key[k.key] = 0;
+        }
+    }
+    if (g_script_quit_at && t >= g_script_quit_at) g_quit = true;
+}
+
+void save_bmp(const BITMAP *b, const char *path) {
+    FILE *f = std::fopen(path, "wb");
+    if (!f) return;
+    int row = (b->w * 3 + 3) & ~3;
+    uint8_t h[54] = {'B', 'M'};
+    auto put32 = [&h](int at, uint32_t v) { for (int i = 0; i < 4; i++) h[at + i] = uint8_t(v >> (8 * i)); };
+    put32(2, 54 + static_cast<uint32_t>(row) * b->h); put32(10, 54); put32(14, 40); put32(18, b->w); put32(22, b->h);
+    h[26] = 1; h[28] = 24;
+    std::fwrite(h, 1, 54, f);
+    std::vector<uint8_t> line(static_cast<size_t>(row), 0);
+    for (int y = b->h - 1; y >= 0; y--) {
+        for (int x = 0; x < b->w; x++) {
+            int c = b->line[y][x];
+            line[x * 3] = uint8_t(getb(c)); line[x * 3 + 1] = uint8_t(getg(c)); line[x * 3 + 2] = uint8_t(getr(c));
+        }
+        std::fwrite(line.data(), 1, line.size(), f);
+    }
+    std::fclose(f);
+}
+
 void present_bitmap(BITMAP *bmp) {
+    if (bmp && !g_script_shots.empty()) {
+        uint32_t t = SDL_GetTicks() - g_script_t0;
+        for (ScriptShot &s : g_script_shots)
+            if (!s.done && t >= s.at) { s.done = true; save_bmp(bmp, s.path.c_str()); }
+    }
     if (!g_renderer || !g_texture || !bmp) return;
     SDL_UpdateTexture(g_texture, nullptr, bmp->dat, bmp->w * static_cast<int>(sizeof(uint16_t)));
     SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
@@ -342,6 +429,8 @@ int set_gfx_mode(int card, int w, int h, int, int) {
     g_shown = screen;
     g_driver.id = card;
     g_driver.windowed = !g_fullscreen;
+    g_driver.w = w;
+    g_driver.h = h;
     gfx_driver = &g_driver;
     gfx_capabilities = GFX_CAN_TRIPLE_BUFFER;
     present_bitmap(screen);
@@ -360,10 +449,9 @@ int request_video_bitmap(BITMAP *bitmap) {
 int show_video_bitmap(BITMAP *bitmap) { return request_video_bitmap(bitmap); }
 int poll_scroll(void) { return 0; }
 
-void vsync(void) {
-    platform_pump();
-    present_bitmap(g_shown);
-}
+// No Allegro, vsync() so espera o retraco vertical; quem mostra o quadro e o laco do jogo
+// (platform_present / show_video_bitmap). O ritmo vem do present com PRESENTVSYNC.
+void vsync(void) { platform_pump(); }
 
 void platform_present(void) { present_bitmap(g_shown); }
 
@@ -379,6 +467,7 @@ bool platform_quit_requested(void) { return g_quit; }
 
 // ------------------------------------------------------------------ eventos
 void platform_pump(void) {
+    script_tick();
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
