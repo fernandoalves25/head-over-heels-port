@@ -108,6 +108,7 @@ void VideoScaler::shutdown() {
             *t = nullptr;
         }
     prescale_k_ = epx_k_ = 0;
+    last_tex_ = nullptr;
 }
 
 void VideoScaler::fit(int out_w, int out_h, double *scale, SDL_Rect *dst) const {
@@ -170,7 +171,7 @@ void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
             g_prof.lap(0);
             SDL_UpdateTexture(epx_, nullptr, epx_buf_.data(), w_ * k * static_cast<int>(sizeof(uint16_t)));
             g_prof.lap(1);
-            SDL_RenderCopy(r_, epx_, nullptr, &dst);
+            draw_final(epx_, dst);
             g_prof.lap(2);
             finish();
             return;
@@ -184,7 +185,7 @@ void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
     if (mode == ScaleMode::Integer) {
         int k = std::max(1, static_cast<int>(std::floor(s)));
         SDL_Rect d = {(ow - w_ * k) / 2, (oh - h_ * k) / 2, w_ * k, h_ * k};
-        SDL_RenderCopy(r_, src_, nullptr, &d);
+        draw_final(src_, d);
     } else if (mode == ScaleMode::Sharp && targets_ok_) {
         // "sharp bilinear": vizinho mais proximo ate o multiplo inteiro logo acima da escala
         // final e filtro linear no resto; nenhum pixel fica maior que o vizinho.
@@ -198,13 +199,13 @@ void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
         if (prescaled_ && SDL_SetRenderTarget(r_, prescaled_) == 0) {
             SDL_RenderCopy(r_, src_, nullptr, nullptr);
             SDL_SetRenderTarget(r_, nullptr);
-            SDL_RenderCopy(r_, prescaled_, nullptr, &dst);
+            draw_final(prescaled_, dst);
         } else {
             SDL_SetRenderTarget(r_, nullptr);
-            SDL_RenderCopy(r_, src_, nullptr, &dst);
+            draw_final(src_, dst);
         }
     } else {
-        SDL_RenderCopy(r_, src_, nullptr, &dst);
+        draw_final(src_, dst);
     }
     finish();
 }
@@ -224,7 +225,24 @@ void VideoScaler::finish() {
         capture_path_.clear();
     }
     if (current_mode_ != ScaleMode::Smooth2x && current_mode_ != ScaleMode::Smooth3x) g_prof.lap(2);
+    submit_time_ = SDL_GetPerformanceCounter();
     SDL_RenderPresent(r_);
     g_prof.lap(3);
     g_prof.frame(scale_mode_name(current_mode_));
+}
+
+void VideoScaler::draw_final(SDL_Texture *t, const SDL_Rect &dst) {
+    SDL_RenderCopy(r_, t, nullptr, &dst);
+    last_tex_ = t;
+    last_dst_ = dst;
+}
+
+void VideoScaler::present_again() {
+    if (!r_ || !last_tex_) return;
+    // o conteudo do back buffer depois de um present e indefinido: redesenha a mesma textura
+    SDL_SetRenderTarget(r_, nullptr);
+    SDL_SetRenderDrawColor(r_, 0, 0, 0, 255);
+    SDL_RenderClear(r_);
+    SDL_RenderCopy(r_, last_tex_, nullptr, &last_dst_);
+    SDL_RenderPresent(r_);
 }

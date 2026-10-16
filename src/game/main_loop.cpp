@@ -287,12 +287,13 @@ void game_render() {
 
 // ------------------------------------------------------------------ quadros interpolados (port)
 // O jogo original roda a logica a g_ticks_per_second (30 no jogo) e so desenha depois de cada
-// tick. No PC o port desenha quadros EXTRAS entre dois ticks, no ritmo do monitor (vsync), com a
-// posicao de cada objeto interpolada entre o tick anterior e o atual. A logica nao muda: antes do
-// quadro extra as posicoes interpoladas entram pelo mecanismo do proprio jogo (Sprite_invalidate,
-// o mesmo que a fisica usa depois de mover) e, depois, voltam aos valores exatos; o estado do
-// rand() tambem e restaurado (luzes e HUD sorteiam no desenho), entao a sequencia aleatoria do
-// jogo e a mesma do original. So vale no estado de jogo (1), fora de transicoes.
+// tick. No PC, com o modo fluido (F9), todo quadro do estado de jogo sai interpolado entre o tick
+// anterior e o atual, no ritmo que platform_smooth_frame_end segura (taxa do monitor ou metade):
+// a imagem anda um tick atras da logica, sem voltar para tras. A logica nao muda: antes do quadro
+// as posicoes interpoladas entram pelo mecanismo do proprio jogo (Sprite_invalidate, o mesmo que a
+// fisica usa depois de mover) e, depois, voltam aos valores exatos; o estado do rand() tambem e
+// restaurado (luzes e HUD sorteiam no desenho), entao a sequencia aleatoria do jogo e a mesma do
+// original. So vale no estado de jogo (1), fora de transicoes; no resto, o quadro real de sempre.
 namespace {
 
 struct SmoothObj { Object *obj; int x, y, z; };
@@ -304,7 +305,6 @@ struct SmoothSnapshot {
 };
 SmoothSnapshot g_smooth_prev;      // estado antes do ultimo lote de ticks
 uint64_t g_smooth_cur_time = 0;    // instante do ultimo tick processado
-uint64_t g_smooth_last_frame = 0;  // instante do ultimo quadro extra
 
 bool smooth_applicable() {
     return platform_smooth_enabled() && g_game_state == 1 && !g_transition_active &&
@@ -330,18 +330,17 @@ inline int lerp_int(int a, int b, double t) {
 }
 inline bool near_delta(int d, int limit) { return d > -limit && d < limit; }
 
-// Desenha um quadro extra se fizer sentido; devolve false se nao desenhou.
+// Desenha e apresenta um quadro interpolado (e segura o ritmo); false = nao se aplica agora.
 bool smooth_render_frame() {
     if (!g_smooth_prev.valid || !smooth_applicable()) return false;
     Room *r = g_char_rooms[g_active_room_slot];
     if (r != g_smooth_prev.room) return false;
+    platform_smooth_frame_begin();
     const uint64_t now = SDL_GetPerformanceCounter();
     const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
-    if (now - g_smooth_last_frame < static_cast<uint64_t>(freq / platform_max_fps())) return false;
     const double period = freq / (g_ticks_per_second > 0 ? g_ticks_per_second : 30);
     double t = (static_cast<double>(now) - static_cast<double>(g_smooth_cur_time)) / period;
-    if (t >= 0.999) return false;  // ja estamos no estado atual: nada a interpolar ate o proximo tick
-    if (t < 0) t = 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;  // tick atrasado: fica no estado atual ate ele chegar
 
     // Posicoes interpoladas (so objetos que ainda estao na sala e andaram pouco: nada de
     // teletransporte/estacionamento em 0x1000).
@@ -369,6 +368,10 @@ bool smooth_render_frame() {
     const uint32_t rng = msvc_rand_state();
     render_game_frame(g_backbuffer);
     msvc_rand_state() = rng;
+    if (g_show_fps) {  // como em game_render
+        int id = r->id;
+        textprintf(g_backbuffer, font, 0, 0, makecol(0xff, 0xff, 0xff), s___02i__02i__0043338c, id % 0x28, id / 0x28);
+    }
 
     for (const Saved &sv : saved) {
         sv.obj->x = sv.x;
@@ -384,7 +387,7 @@ bool smooth_render_frame() {
     if (g_show_fps) draw_fps_counter(g_render_target);
     if (g_triple_buffer) request_video_bitmap(g_render_target);
     else platform_present();
-    g_smooth_last_frame = SDL_GetPerformanceCounter();
+    platform_smooth_frame_end();
     return true;
 }
 
@@ -441,6 +444,7 @@ int game_main(int argc, char **argv) {
     }
     // center_window (0x402180): o SDL ja centraliza a janela.
     triple_buffer_init();
+    options_port_init();  // port: item FRAME RATE (depois do set_gfx_mode, que le o port.cfg)
     if (install_joystick(JOY_TYPE_AUTODETECT) != 0) g_joystick_enabled = 0;
     if (num_joysticks == 0) g_joystick_enabled = 0;
     g_backbuffer = create_bitmap(g_screen_w, g_screen_h);
@@ -480,7 +484,7 @@ int game_main(int argc, char **argv) {
             uint64_t now = SDL_GetPerformanceCounter();
             if (now - prof_t0 >= SDL_GetPerformanceFrequency()) {
                 if (FILE *f = std::fopen(prof_path, "a")) {
-                    std::fprintf(f, "estado %d: ticks %d  quadros reais %d (%.1f ms)  extras %d (%.1f ms)  update %.1f ms  ociosos %d" "\n",
+                    std::fprintf(f, "estado %d: ticks %d  quadros reais %d (%.1f ms)  interpolados %d (%.1f ms)  update %.1f ms  ociosos %d" "\n",
                                  g_game_state, prof_ticks, prof_real, prof_real ? prof_rend / prof_real : 0.0, prof_extra,
                                  prof_extra ? prof_xtra / prof_extra : 0.0, prof_ticks ? prof_upd / prof_ticks : 0.0, prof_idle);
                     std::fclose(f);
@@ -514,9 +518,14 @@ int game_main(int argc, char **argv) {
             } while (g_logic_counter < g_tick_counter);
             g_smooth_cur_time = g_tick_time.load(std::memory_order_relaxed);
             uint64_t pr = SDL_GetPerformanceCounter();
-            game_render();
-            prof_rend += (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf;
-            prof_real++;
+            if (smooth_render_frame()) {  // port: no modo fluido este quadro tambem sai interpolado
+                prof_xtra += (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf;
+                prof_extra++;
+            } else {
+                game_render();
+                prof_rend += (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf;
+                prof_real++;
+            }
             redraw = 0;
             g_redraw = 0;
         } else if (redraw != 0) {

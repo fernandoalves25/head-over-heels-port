@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -34,8 +35,12 @@ SDL_Renderer *g_renderer = nullptr;
 VideoScaler g_scaler;
 ScaleMode g_scale_mode = ScaleMode::Smooth3x;  // padrao no PC (F10 alterna; port.cfg guarda)
 bool g_scaler_ready = false;
-bool g_smooth = true;          // quadros interpolados (port.cfg: smooth = 0/1; F9)
-bool g_smooth_cfg_set = false;
+// Quadros interpolados (port.cfg "fps"; F9 alterna): kFpsOff = so os 30 do original, kFpsAuto = taxa
+// do monitor (cai para a metade se o PC nao acompanhar), N = N por segundo, arredondado para a taxa do
+// monitor dividida por um inteiro (num monitor de 120 Hz: 120 ou 60).
+constexpr int kFpsOff = 0, kFpsAuto = -1;
+int g_fps_mode = kFpsAuto;
+bool g_fps_cfg_set = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
 bool g_quit = false;
@@ -45,6 +50,12 @@ std::deque<int> g_keybuf;
 // ------------------------------------------------------------------ port.cfg (opcoes do port)
 const char *kPortCfg = "port.cfg";
 
+int fps_mode_from_name(const char *v) {
+    if (std::strcmp(v, "auto") == 0) return kFpsAuto;
+    int n = std::atoi(v);
+    return n > 30 ? n : kFpsOff;  // "off", "0", "30": como o original
+}
+
 void load_port_cfg() {
     if (FILE *f = std::fopen(kPortCfg, "r")) {
         char line[256];
@@ -52,13 +63,18 @@ void load_port_cfg() {
             char key_[64] = "", val[128] = "";
             if (std::sscanf(line, " %63[^= ] = %127s", key_, val) == 2) {
                 if (std::strcmp(key_, "scaler") == 0) scale_mode_from_name(val, &g_scale_mode);
-                if (std::strcmp(key_, "smooth") == 0) { g_smooth = std::atoi(val) != 0; g_smooth_cfg_set = true; }
+                if (std::strcmp(key_, "fps") == 0) { g_fps_mode = fps_mode_from_name(val); g_fps_cfg_set = true; }
+                if (std::strcmp(key_, "smooth") == 0 && !g_fps_cfg_set) {  // port.cfg antigo (liga/desliga)
+                    g_fps_mode = std::atoi(val) != 0 ? kFpsAuto : kFpsOff;
+                    g_fps_cfg_set = true;
+                }
             }
         }
         std::fclose(f);
     }
     if (const char *env = std::getenv("HOH_SCALER")) scale_mode_from_name(env, &g_scale_mode);
-    if (const char *env = std::getenv("HOH_SMOOTH")) { g_smooth = std::atoi(env) != 0; g_smooth_cfg_set = true; }
+    if (const char *env = std::getenv("HOH_SMOOTH")) { g_fps_mode = std::atoi(env) != 0 ? kFpsAuto : kFpsOff; g_fps_cfg_set = true; }
+    if (const char *env = std::getenv("HOH_FPS")) { g_fps_mode = fps_mode_from_name(env); g_fps_cfg_set = true; }
 }
 
 void save_port_cfg() {
@@ -66,18 +82,113 @@ void save_port_cfg() {
         std::fprintf(f, "# Opcoes do port (nao existem no jogo original)\n");
         std::fprintf(f, "# scaler: sharp | smooth2x | smooth3x | nearest | integer   (F10 alterna)\n");
         std::fprintf(f, "scaler = %s\n", scale_mode_name(g_scale_mode));
-        std::fprintf(f, "# smooth: 1 = quadros extras interpolados (60/120/144 Hz), 0 = so os 30 do original (F9)\n");
-        std::fprintf(f, "smooth = %d\n", g_smooth ? 1 : 0);
+        std::fprintf(f, "# fps: auto | 120 | 60 | ... | off   (F9 alterna; auto = taxa do monitor, cai para a metade\n");
+        std::fprintf(f, "#      se o PC nao acompanhar; off = so os 30 quadros do original)\n");
+        if (g_fps_mode == kFpsAuto) std::fprintf(f, "fps = auto\n");
+        else if (g_fps_mode == kFpsOff) std::fprintf(f, "fps = off\n");
+        else std::fprintf(f, "fps = %d\n", g_fps_mode);
         std::fclose(f);
     }
 }
 
+// ------------------------------------------------------------------ ritmo dos quadros interpolados
+// O jogo pensa a 30 ticks/s; os quadros interpolados saem a uma fracao inteira da taxa do monitor
+// (refresh / divisor) para cada quadro ficar o mesmo numero de retracos na tela. Com vsync, o
+// present ja espera o retraco e o quadro e repetido (divisor - 1) vezes; se o vsync nao segurar
+// (driver forcando desligado, renderer por software), espera-se pelo relogio.
+struct FramePacer {
+    enum class Vsync { Unknown, On, Off };
+    int refresh = 60;           // Hz do monitor da janela
+    int auto_divisor = 1;       // divisor do modo auto (sobe quando o PC nao acompanha)
+    Vsync vsync = Vsync::Unknown;
+    uint64_t begin = 0, last_end = 0, deadline = 0;
+    uint64_t hold_until = 0;    // auto: nao tenta voltar para a taxa maior antes disto
+    double backoff_s = 5;
+    // janela de avaliacao (~1 s)
+    uint64_t win_t0 = 0;
+    int win_frames = 0, win_misses = 0;
+    double win_interval = 0, win_offgrid = 0, win_work = 0, win_work_max = 0;
+} g_pacer;
+
+int divisor_for(int mode, int refresh) {
+    if (mode == kFpsAuto) return g_pacer.auto_divisor;
+    if (mode <= 0) return 1;
+    return std::max(1, static_cast<int>(std::lround(static_cast<double>(refresh) / mode)));
+}
+int pacer_divisor() { return divisor_for(g_fps_mode, g_pacer.refresh); }
+
+void pacer_reset_window() {
+    g_pacer.win_t0 = 0;
+    g_pacer.win_frames = g_pacer.win_misses = 0;
+    g_pacer.win_interval = g_pacer.win_offgrid = g_pacer.win_work = g_pacer.win_work_max = 0;
+}
+
+// Volta a medir do zero (outro monitor, tela cheia, outro modo).
+void pacer_reset(bool redetect_vsync) {
+    if (redetect_vsync) g_pacer.vsync = FramePacer::Vsync::Unknown;
+    g_pacer.auto_divisor = 1;
+    g_pacer.hold_until = 0;
+    g_pacer.backoff_s = 5;
+    g_pacer.last_end = g_pacer.deadline = 0;
+    pacer_reset_window();
+}
+
 void update_window_title() {
     if (!g_window) return;
-    char t[128];
-    std::snprintf(t, sizeof t, "Head Over Heels   [F9 fluido: %s | F10 escala: %s | F11 tela cheia]",
-                  g_smooth ? "sim" : "nao", scale_mode_name(g_scale_mode));
+    char fps[48];
+    if (g_fps_mode == kFpsOff) std::snprintf(fps, sizeof fps, "30 (original)");
+    else std::snprintf(fps, sizeof fps, "%s%d/s%s", g_fps_mode == kFpsAuto ? "auto (" : "",
+                       static_cast<int>(std::lround(static_cast<double>(g_pacer.refresh) / pacer_divisor())),
+                       g_fps_mode == kFpsAuto ? ")" : "");
+    char t[160];
+    std::snprintf(t, sizeof t, "Head Over Heels   [F9 quadros: %s | F10 escala: %s | F11 tela cheia]", fps,
+                  scale_mode_name(g_scale_mode));
     SDL_SetWindowTitle(g_window, t);
+}
+
+void query_refresh_rate() {
+    int hz = 60;
+    SDL_DisplayMode m;
+    int idx = g_window ? SDL_GetWindowDisplayIndex(g_window) : 0;
+    if (idx >= 0 && SDL_GetCurrentDisplayMode(idx, &m) == 0 && m.refresh_rate > 0) hz = m.refresh_rate;
+    if (const char *e = std::getenv("HOH_REFRESH")) hz = std::max(30, std::atoi(e));  // testes
+    if (hz != g_pacer.refresh) {
+        g_pacer.refresh = hz;
+        pacer_reset(true);
+        update_window_title();
+    }
+}
+
+// F9: auto -> taxa do monitor -> metade -> ... (enquanto >= 50/s) -> 30 do original -> auto.
+void cycle_fps_mode(int dir) {
+    std::vector<int> modes = {kFpsAuto};
+    for (int d = 1; d <= 6 && g_pacer.refresh / d >= 50; d++)
+        modes.push_back(static_cast<int>(std::lround(static_cast<double>(g_pacer.refresh) / d)));
+    if (modes.size() == 1) modes.push_back(g_pacer.refresh);
+    modes.push_back(kFpsOff);
+    size_t next = 0;
+    for (size_t i = 0; i < modes.size(); i++) {
+        bool same = modes[i] == g_fps_mode ||
+                    (modes[i] > 0 && g_fps_mode > 0 &&
+                     divisor_for(modes[i], g_pacer.refresh) == divisor_for(g_fps_mode, g_pacer.refresh));
+        if (same) {
+            next = (i + modes.size() + (dir < 0 ? -1 : 1)) % modes.size();
+            break;
+        }
+    }
+    g_fps_mode = modes[next];
+    pacer_reset(false);
+}
+
+void sleep_until(uint64_t t) {
+    const double f = static_cast<double>(SDL_GetPerformanceFrequency());
+    for (;;) {
+        uint64_t now = SDL_GetPerformanceCounter();
+        if (now >= t) return;
+        double ms = (t - now) * 1000.0 / f;
+        if (ms > 2.0) SDL_Delay(static_cast<Uint32>(ms - 1.5));
+        else SDL_Delay(0);  // ultimo trecho: so cede a CPU
+    }
 }
 
 // ------------------------------------------------------------------ teclado
@@ -283,6 +394,8 @@ int script_key_code(const std::string &n) {
     for (auto &p : names)
         if (n == p.first) return p.second;
     if (n.size() == 1 && n[0] >= 'A' && n[0] <= 'Z') return KEY_A + (n[0] - 'A');
+    if (n == "F9") return KEY_F9;
+    if (n == "F10") return KEY_F10;
     return std::atoi(n.c_str());
 }
 
@@ -317,6 +430,15 @@ void script_tick() {
     if (!g_script_loaded) script_load();
     uint32_t t = SDL_GetTicks() - g_script_t0;
     for (ScriptKey &k : g_script_keys) {
+        if (!k.down_done && t >= k.at && (k.key == KEY_F9 || k.key == KEY_F10)) {
+            k.down_done = k.up_done = true;  // teclas do port: passam pelo tratamento de eventos
+            SDL_Event e{};
+            e.type = SDL_KEYDOWN;
+            e.key.keysym.sym = k.key == KEY_F9 ? SDLK_F9 : SDLK_F10;
+            e.key.keysym.scancode = k.key == KEY_F9 ? SDL_SCANCODE_F9 : SDL_SCANCODE_F10;
+            SDL_PushEvent(&e);
+            continue;
+        }
         if (!k.down_done && t >= k.at && k.key > 0 && k.key < KEY_MAX) {
             k.down_done = true;
             key[k.key] = 1;
@@ -464,7 +586,7 @@ int set_gfx_mode(int card, int w, int h, int, int) {
     if (const char *ws = std::getenv("HOH_WINDOW_SIZE")) std::sscanf(ws, "%dx%d", &win_w, &win_h);  // testes
     load_port_cfg();
     if (handheld) g_scale_mode = ScaleMode::Nearest;  // tela 640x480 nativa: 1:1
-    if (handheld && !g_smooth_cfg_set) g_smooth = false;  // console: 30 quadros como o original (CPU/bateria)
+    if (handheld && !g_fps_cfg_set) g_fps_mode = kFpsOff;  // console: 30 quadros como o original (CPU/bateria)
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (g_fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     g_window = SDL_CreateWindow("Head Over Heels", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
@@ -486,6 +608,7 @@ int set_gfx_mode(int card, int w, int h, int, int) {
         return -1;
     }
     if (handheld) SDL_ShowCursor(SDL_DISABLE);
+    query_refresh_rate();
     update_window_title();
     screen = create_bitmap(w, h);
     g_shown = screen;
@@ -522,13 +645,101 @@ void platform_toggle_fullscreen(void) {
     g_fullscreen = !g_fullscreen;
     SDL_SetWindowFullscreen(g_window, g_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     if (gfx_driver) gfx_driver->windowed = !g_fullscreen;
+    query_refresh_rate();
+    pacer_reset(true);  // em tela cheia o vsync pode se comportar diferente
 }
 
 bool platform_is_fullscreen(void) { return g_fullscreen; }
-bool platform_smooth_enabled(void) { return g_smooth; }
-int platform_max_fps(void) {
-    static int v = [] { const char *e = std::getenv("HOH_MAX_FPS"); int n = e ? std::atoi(e) : 240; return n > 0 ? n : 240; }();
-    return v;
+bool platform_smooth_enabled(void) { return g_fps_mode != kFpsOff; }
+int platform_fps_mode(void) { return g_fps_mode; }
+int platform_fps_target(void) {
+    if (g_fps_mode == kFpsOff) return 30;
+    return static_cast<int>(std::lround(static_cast<double>(g_pacer.refresh) / pacer_divisor()));
+}
+void platform_cycle_fps_mode(int dir) {
+    cycle_fps_mode(dir);
+    save_port_cfg();
+    update_window_title();
+}
+
+void platform_smooth_frame_begin(void) { g_pacer.begin = SDL_GetPerformanceCounter(); }
+
+void platform_smooth_frame_end(void) {
+    FramePacer &p = g_pacer;
+    const double f = static_cast<double>(SDL_GetPerformanceFrequency());
+    const int d = pacer_divisor();
+    const double frame_s = static_cast<double>(d) / p.refresh;  // duracao de um quadro novo
+    const uint64_t submit = g_scaler.submit_time();
+    const double work_ms = submit > p.begin ? (submit - p.begin) * 1000.0 / f : 0.0;
+
+    if (p.vsync != FramePacer::Vsync::Off) {
+        for (int i = 1; i < d; i++) g_scaler.present_again();  // cada present espera um retraco
+    } else {
+        const uint64_t step = static_cast<uint64_t>(frame_s * f);
+        const uint64_t now = SDL_GetPerformanceCounter();
+        uint64_t target = p.deadline + step;
+        if (p.deadline == 0 || now - p.deadline > static_cast<uint64_t>(0.25 * f)) target = p.begin + step;
+        else if (now > target + step) target = now;  // atrasou mais de um quadro: recomeca daqui
+        sleep_until(target);
+        p.deadline = target;
+    }
+
+    const uint64_t end = SDL_GetPerformanceCounter();
+    const double interval = p.last_end ? (end - p.last_end) / f : 1.0;
+    p.last_end = end;
+    if (interval >= 0.25) return;  // primeiro quadro ou volta de menu/pausa: nada a medir
+    if (p.win_t0 == 0) p.win_t0 = end;
+    p.win_frames++;
+    p.win_interval += interval;
+    const double vblanks = interval * p.refresh;  // com vsync, sempre perto de um inteiro >= 1
+    p.win_offgrid += vblanks < 0.5 ? 0.5 : std::fabs(vblanks - std::round(vblanks));
+    if (interval > (d + 0.5) / p.refresh) p.win_misses++;  // ficou um retraco a mais na tela
+    p.win_work += work_ms;
+    p.win_work_max = std::max(p.win_work_max, work_ms);
+
+    const bool measuring = p.vsync == FramePacer::Vsync::Unknown;
+    if (!(measuring ? p.win_frames >= 30 : (end - p.win_t0) / f >= 1.0)) return;
+    const double avg_interval = p.win_interval / p.win_frames;
+    const double avg_work = p.win_work / p.win_frames;
+    const double avg_offgrid = p.win_offgrid / p.win_frames;
+    // Com vsync os quadros saem em multiplos inteiros do retraco e nunca mais rapido que o alvo;
+    // fora da grade (ou bem mais rapido) = o vsync nao segura e o relogio assume.
+    if (p.vsync != FramePacer::Vsync::Off) {
+        const bool on_grid = avg_offgrid < 0.12 && avg_interval >= 0.75 * frame_s;
+        p.vsync = on_grid ? FramePacer::Vsync::On : FramePacer::Vsync::Off;
+    }
+    bool changed = false;
+    if (g_fps_mode == kFpsAuto && !measuring) {
+        const uint64_t now = SDL_GetPerformanceCounter();
+        if (p.win_misses * 10 > p.win_frames && p.refresh / (p.auto_divisor + 1) >= 30) {
+            p.auto_divisor++;  // perdeu mais de 10% dos retracos: metade da taxa (120 -> 60)
+            p.hold_until = now + static_cast<uint64_t>(p.backoff_s * f);
+            p.backoff_s = std::min(p.backoff_s * 2, 60.0);
+            changed = true;
+        } else if (p.auto_divisor > 1 && now >= p.hold_until) {
+            const double faster_ms = 1000.0 * (p.auto_divisor - 1) / p.refresh;
+            if (avg_work < 0.6 * faster_ms && p.win_work_max < 0.9 * faster_ms) {
+                p.auto_divisor--;  // folga de sobra: tenta a taxa maior de novo
+                p.hold_until = now + static_cast<uint64_t>(3 * f);
+                changed = true;
+            }
+        }
+    }
+    if (const char *prof = std::getenv("HOH_PROFILE")) {
+        if (FILE *pf = std::fopen(prof, "a")) {
+            std::fprintf(pf, "[ritmo] monitor %d Hz  alvo %.1f/s (divisor %d)  vsync %s  quadros %d  perdidos %d  "
+                             "intervalo %.2f ms (fora da grade %.2f)  trabalho %.2f ms (max %.2f)\n",
+                         p.refresh, static_cast<double>(p.refresh) / d, d,
+                         p.vsync == FramePacer::Vsync::On ? "segura" : "nao segura (relogio)", p.win_frames,
+                         p.win_misses, avg_interval * 1000.0, avg_offgrid, avg_work, p.win_work_max);
+            std::fclose(pf);
+        }
+    }
+    pacer_reset_window();
+    if (changed) {
+        p.deadline = 0;
+        update_window_title();
+    }
 }
 bool platform_quit_requested(void) { return g_quit; }
 
@@ -550,7 +761,7 @@ void platform_pump(void) {
                 }
                 if (e.key.keysym.sym == SDLK_F9) {  // port: quadros interpolados
                     if (!e.key.repeat) {
-                        g_smooth = !g_smooth;
+                        cycle_fps_mode(1);
                         save_port_cfg();
                         update_window_title();
                     }
@@ -584,6 +795,8 @@ void platform_pump(void) {
                 break;
             case SDL_WINDOWEVENT:
                 if (e.window.event == SDL_WINDOWEVENT_EXPOSED) present_bitmap(g_shown);
+                if (e.window.event == SDL_WINDOWEVENT_MOVED || e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED)
+                    query_refresh_rate();  // a janela pode ter ido para outro monitor
                 break;
             default: break;
         }

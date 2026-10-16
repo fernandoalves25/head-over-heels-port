@@ -94,7 +94,8 @@ Instalar no aparelho: extraia `hoh-r36s.zip` na pasta `roms/` do cartão (fica
 `roms/ports/Head Over Heels (Nativo).sh` e `roms/ports/hohnative/`), copie `HoHOriginal.dat` e a
 pasta `Sound/` para `roms/ports/hohnative/gamedata/` e abra em Ports. Controle via gptokeyb
 (`hohnative/hoh.gptk`, mesmo mapeamento do port Box64); SELECT+START sai. Log em
-`roms/ports/hohnative/log.txt`.
+`roms/ports/hohnative/log.txt`. No aparelho o jogo vem a 30 quadros por segundo, como o original;
+para tentar 60, use GAME OPTIONS → FRAME RATE (AUTO ou 60 FPS; o AUTO cai para 30 se não der).
 
 ## Qualidade de imagem (PC)
 
@@ -113,22 +114,37 @@ O jogo desenha em 640×480; o port amplia para a janela/tela inteira mantendo 4:
 A janela abre com ~90% da altura da tela. No R36S (tela 640×480) a imagem é sempre 1:1.
 Teste sem janela: `scripts/scaler-test.sh` (captura a saída ampliada de cada modo).
 
-## Movimento suave (PC)
+## Movimento suave
 
-A lógica roda a 30 passos por segundo (60 nos menus), como no original. Com o movimento suave
-(padrão no PC, **F9** alterna, salvo em `port.cfg` ou `HOH_SMOOTH=0/1`), entre um passo e outro o
-port desenha quadros extras na taxa do monitor: as posições dos objetos são interpoladas entre o
-passo anterior e o atual, o quadro é desenhado e tudo volta ao estado real (inclusive a semente
-do `rand()`), então a jogabilidade não muda. `HOH_MAX_FPS` limita os quadros extras quando não há
-vsync (padrão 240). No R36S fica desligado. `HOH_SHOW_FPS=1` mostra o contador e
-`HOH_PROFILE=arquivo` grava os tempos do laço por segundo.
+A lógica roda a 30 passos por segundo (60 nos menus), como no original. No jogo, com o movimento
+suave, cada quadro mostra as posições interpoladas entre o passo anterior e o atual (a imagem anda
+um passo atrás da lógica); depois do desenho tudo volta ao estado real, inclusive a semente do
+`rand()`, então a jogabilidade não muda.
+
+Os quadros saem na taxa do monitor dividida por um inteiro, para cada quadro ficar o mesmo tempo na
+tela: num monitor de 120 Hz, 120 ou 60 por segundo; num de 144 Hz, 144 ou 72. Escolha em
+GAME OPTIONS → FRAME RATE (item do port, antes do BACK; esquerda/direita) ou com **F9**; fica salvo
+em `port.cfg` como `fps = ...` (ou `HOH_FPS=auto|120|60|off`):
+
+| Modo | Resultado |
+|---|---|
+| `auto` (padrão) | taxa do monitor; se o PC perder mais de 10% dos retraços, cai para a metade e tenta voltar depois |
+| `120`, `60`… | fixo (arredondado para um divisor da taxa do monitor) |
+| `off` | só os 30 quadros do original (padrão no R36S) |
+
+Com vsync, o present espera o retraço e, no modo metade, o mesmo quadro é apresentado duas vezes.
+Se o vsync não segurar (driver forçando desligado, renderer por software), o port percebe que os
+quadros não caem na grade do retraço e passa a segurar o ritmo pelo relógio. `HOH_SHOW_FPS=1` mostra
+o contador; `HOH_PROFILE=arquivo` grava por segundo o ritmo (taxa do monitor, alvo, vsync,
+retraços perdidos, tempo de trabalho por quadro) e os tempos do laço; `HOH_REFRESH=N` finge um
+monitor de N Hz (testes).
 
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
-- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: movimento suave.
+- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: quadros por segundo (auto, 120, 60, 30).
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

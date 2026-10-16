@@ -6,6 +6,7 @@
 // g_menu_fade = 20 -> menu_update decrementa e, quando < 0, executa a acao do item.
 #include "game/menu.h"
 
+#include "compat/platform.h"
 #include "game/globals.h"
 #include "game/gfx_util.h"
 #include "game/intro.h"
@@ -236,8 +237,8 @@ void menu_update() {
                 if (g_menu_sel == 3) menu_open(0, 2);
                 else menu_open(3, 0);
                 return;
-            case 4:
-                if (g_menu_sel == 5) menu_open(0, 3);
+            case 4:  // port: BACK e o ultimo item (6; o original tinha 6 itens e BACK no 5)
+                if (g_menu_sel == g_menu_count[4] - 1) menu_open(0, 3);
                 else menu_open(4, 0);
                 return;
             case 5:
@@ -428,6 +429,8 @@ void menu_update() {
         return;
     }
 
+    if (menu == 4) options_text_frame_rate();  // port: o F9 tambem muda o modo com o menu aberto
+
     if (g_redefining_control == 0) {
         // ------------------------------------------------------------ navegacao normal
         const bool left = g_input_left != 0;
@@ -544,6 +547,10 @@ void menu_update() {
                             case 4:  // C.SENSITIVITY
                                 g_csens_high = !g_csens_high;
                                 options_text_sensitivity();
+                                break;
+                            case 5:  // port: FRAME RATE (o mesmo ciclo do F9)
+                                platform_cycle_fps_mode(left ? -1 : 1);
+                                options_text_frame_rate();
                                 break;
                             default:
                                 break;
@@ -769,6 +776,25 @@ void options_text_gfx_mode() {
         return;
     }
     std::sprintf(g_str_gfx_mode, "%s", s_GFX_MODE__FULL_SCREEN_00433190);
+}
+
+// port: GAME OPTIONS ganha FRAME RATE (quadros por segundo; no R36S nao ha F9) no lugar do BACK,
+// que desce para o item 6. O painel sobe 15 px para o menu continuar centrado.
+void options_port_init() {
+    std::snprintf(g_menu_items[4][6], sizeof g_menu_items[4][6], "BACK");
+    g_menu_item_adjustable[4][5] = 1;
+    g_menu_item_adjustable[4][6] = 0;
+    g_menu_count[4] = 7;
+    g_menu_y[4] = 155;
+    options_text_frame_rate();
+}
+
+// "FRAME RATE:      AUTO" / "FRAME RATE:   120 FPS" (21 colunas, como os outros itens)
+void options_text_frame_rate() {
+    char value[16];
+    if (platform_fps_mode() < 0) std::snprintf(value, sizeof value, "AUTO");
+    else std::snprintf(value, sizeof value, "%d FPS", platform_fps_target());
+    std::snprintf(g_menu_items[4][5], sizeof g_menu_items[4][5], "FRAME RATE:%10s", value);
 }
 
 // 0x00407360 input_read_controls: g_control_type 0 = tecla key[code], 1 = botao code do joystick

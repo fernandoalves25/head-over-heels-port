@@ -21,6 +21,10 @@ void options_text_triple_buffer();    // 0x0040a1f0
 void options_text_sensitivity();      // 0x0040a230
 void options_text_gfx_mode();         // 0x0040a350
 
+// port: item FRAME RATE no menu GAME OPTIONS (antes do BACK); chamar depois de set_gfx_mode.
+void options_port_init();
+void options_text_frame_rate();
+
 void input_read_controls();           // 0x00407360
 void controls_build_menu_text(bool full);  // 0x0040a260
 bool input_any_pressed();             // 0x0040bf80

@@ -14,9 +14,14 @@ Teclas
     sharp     pixels nitidos e uniformes em qualquer tamanho
     nearest   pixels crus esticados
     integer   so multiplos inteiros (pixel perfeito, com tarjas)
-- F9: movimento suave (ligado por padrao, fica salvo em port.cfg). A logica continua a
-  30 passos por segundo como no original; entre um passo e outro o port desenha quadros
-  intermediarios na taxa do monitor (60/120/144 Hz). Desligado = 30 quadros, como o original.
+- F9 ou GAME OPTIONS > FRAME RATE: quadros por segundo (fica salvo em port.cfg; o titulo
+  da janela mostra o atual):
+    auto      taxa do monitor (120 num monitor de 120 Hz); se o PC nao acompanhar,
+              cai para a metade (60) sozinho (padrao)
+    120 / 60  fixo (num monitor de 144 Hz as opcoes sao 144 e 72)
+    30        so os 30 quadros do jogo original
+  A logica continua a 30 passos por segundo como no original; os quadros a mais mostram
+  o movimento interpolado entre um passo e outro, sem mudar a jogabilidade.
 - F11 ou Alt+Enter: alterna janela / tela cheia (a imagem ocupa a tela toda em 4:3).
 - Controles USB/XInput funcionam como joystick (ative em CHANGE CONTROLS).
 
