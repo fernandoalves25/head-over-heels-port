@@ -94,8 +94,9 @@ Instalar no aparelho: extraia `hoh-r36s.zip` na pasta `roms/` do cartão (fica
 `roms/ports/Head Over Heels (Nativo).sh` e `roms/ports/hohnative/`), copie `HoHOriginal.dat` e a
 pasta `Sound/` para `roms/ports/hohnative/gamedata/` e abra em Ports. Controle via gptokeyb
 (`hohnative/hoh.gptk`, mesmo mapeamento do port Box64); SELECT+START sai. Log em
-`roms/ports/hohnative/log.txt`. No aparelho o jogo vem a 30 quadros por segundo, como o original;
-para tentar 60, use GAME OPTIONS → FRAME RATE (AUTO ou 60 FPS; o AUTO cai para 30 se não der).
+`roms/ports/hohnative/log.txt`. No aparelho o FRAME RATE vem em AUTO, como no PC: 60 quadros por
+segundo (testado: fica liso), caindo para 30 sozinho se não acompanhar; 30 FPS em GAME OPTIONS →
+FRAME RATE deixa como o original.
 
 ## Qualidade de imagem (PC)
 
@@ -130,7 +131,7 @@ em `port.cfg` como `fps = ...` (ou `HOH_FPS=auto|120|60|off`):
 |---|---|
 | `auto` (padrão) | taxa do monitor; se o PC perder mais de 10% dos retraços, cai para a metade e tenta voltar depois |
 | `120`, `60`… | fixo (arredondado para um divisor da taxa do monitor) |
-| `off` | só os 30 quadros do original (padrão no R36S) |
+| `off` | só os 30 quadros do original |
 
 Com vsync, o present espera o retraço e, no modo metade, o mesmo quadro é apresentado duas vezes.
 Se o vsync não segurar (driver forçando desligado, renderer por software), o port percebe que os

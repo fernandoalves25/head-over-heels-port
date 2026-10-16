@@ -586,7 +586,7 @@ int set_gfx_mode(int card, int w, int h, int, int) {
     if (const char *ws = std::getenv("HOH_WINDOW_SIZE")) std::sscanf(ws, "%dx%d", &win_w, &win_h);  // testes
     load_port_cfg();
     if (handheld) g_scale_mode = ScaleMode::Nearest;  // tela 640x480 nativa: 1:1
-    if (handheld && !g_fps_cfg_set) g_fps_mode = kFpsOff;  // console: 30 quadros como o original (CPU/bateria)
+    // fps: auto tambem no console (no R36S fica liso a 60; o auto cai para 30 se nao acompanhar)
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (g_fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     g_window = SDL_CreateWindow("Head Over Heels", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
