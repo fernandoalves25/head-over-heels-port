@@ -4,3 +4,4 @@ build/
 Config.dat
 Save*.dat
 *.log
+dist/

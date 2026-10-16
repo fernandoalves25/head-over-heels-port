@@ -58,7 +58,7 @@ struct SpriteDef {  // moveis (0x127c8 @0x91e020) e nomeados (0x24f18 @0xa5adcc)
 
 struct WorldDef {  // objetos 0x70 em 0xa5b5c4
     int32_t v0 = 0;
-    BITMAP *main = nullptr;
+    BITMAP *main_image = nullptr;
     std::array<std::array<FramePair, 2>, 6> parts{};
 };
 

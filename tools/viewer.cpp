@@ -81,7 +81,7 @@ struct Viewer {
             case 1: for (BITMAP *b : gd.mobiles[item].frames) v.push_back({b, nullptr}); break;
             case 2: for (BITMAP *b : gd.named[item].frames) v.push_back({b, nullptr}); break;
             case 3:
-                v.push_back({gd.worlds[item].main, nullptr});
+                v.push_back({gd.worlds[item].main_image, nullptr});
                 for (auto &part : gd.worlds[item].parts)
                     for (auto &fp : part) v.push_back({fp.a, fp.b});
                 break;

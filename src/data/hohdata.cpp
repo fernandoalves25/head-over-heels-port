@@ -132,7 +132,7 @@ void parse_all(const std::vector<uint8_t> &d, GameData &out) {
         WorldDef w;
         w.v0 = r.i32();
         int32_t mw = r.i32(), mh = r.i32();
-        w.main = r.image(mw, mh);
+        w.main_image = r.image(mw, mh);
         for (auto &part : w.parts)
             for (auto &fp : part) fp = read_pair(r);
         out.worlds.push_back(w);
@@ -163,7 +163,7 @@ GameData::~GameData() {
         for (auto &s : *list)
             for (BITMAP *f : s.frames) destroy_bitmap(f);
     for (auto &w : worlds) {
-        destroy_bitmap(w.main);
+        destroy_bitmap(w.main_image);
         for (auto &part : w.parts)
             for (auto &fp : part) { destroy_bitmap(fp.a); destroy_bitmap(fp.b); }
     }

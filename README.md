@@ -61,6 +61,19 @@ Executáveis: `hoh` (o jogo) e `hoh-viewer` (visualizador de sprites/sons do mar
 Teste automático (variáveis de ambiente): `HOH_KEYS="3000:ENTER;6500:DOWN"` aperta teclas,
 `HOH_SHOTS="5000:tela.bmp"` salva o quadro, `HOH_AUTOQUIT_MS=12000` encerra.
 
+## Compilar para Windows x64 (no WSL, com MinGW-w64)
+
+```bash
+sudo apt install -y mingw-w64 ninja-build cmake
+scripts/build-windows.sh            # monta SDL2/libogg/libvorbis e gera dist/windows/
+```
+
+O script espera em `/mnt/f/headover/tools/deps/dl/` (ou na pasta passada como argumento):
+`SDL2-devel-2.32.10-mingw.tar.gz` (github.com/libsdl-org/SDL), `libogg-1.3.5.tar.gz` e
+`libvorbis-1.3.7.tar.gz` (downloads.xiph.org, com os `SHA256SUMS` da xiph). O `hoh.exe` sai com
+o runtime do GCC embutido e só precisa do `SDL2.dll` ao lado. `dist/windows/` também traz
+`Jogar.bat` e `LEIA-ME.txt`.
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
