@@ -7,7 +7,11 @@
 #include "game/intro.h"
 #include "game/menu.h"
 #include "game/music.h"
-#include "game/pending.h"
+#include "game/engine_data.h"
+#include "game/engine_types.h"
+#include "game/gameplay.h"
+#include "game/room_render.h"
+#include "game/screens.h"
 #include "game/sound.h"
 #include "game/water.h"
 
@@ -16,13 +20,28 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+#include <cstdint>
 #include <ctime>
+#include <vector>
 
 namespace hoh {
 
+// Aviso na tela do port (ex.: funcionalidade ainda nao portada); desenhado por game_render.
+int g_port_notice_ticks = 0;
+const char *g_port_notice = nullptr;
+
+static Room *active_room() { return g_char_rooms[g_active_room_slot]; }
+
 // 0x00402150 timer_tick: no original tambem alimentava o stream Ogg (FUN_00427ff0); no port o
 // mixer puxa a musica sozinho.
-void timer_tick() { g_tick_counter = g_tick_counter + 1; }
+// port: instante (contador de alta resolucao) do ultimo tick, para interpolar os quadros extras.
+static std::atomic<uint64_t> g_tick_time{0};
+
+void timer_tick() {
+    g_tick_counter = g_tick_counter + 1;
+    g_tick_time.store(SDL_GetPerformanceCounter(), std::memory_order_relaxed);
+}
 
 // 0x00402170 int_div_float
 float int_div_float(int a, float b) { return static_cast<float>(a) / b; }
@@ -59,6 +78,7 @@ void triple_buffer_init() {
 void free_game_resources() {
     for (int i = 0; i < g_bitmap_registry_count; i++) destroy_bitmap(g_bitmap_registry[i]);
     g_bitmap_registry_count = 0;
+    engine_free_game_objects();  // blocos/moveis/nomeados/mundos (destrutores virtuais no original)
     delete g_data;
     g_data = nullptr;
     for (BITMAP *&b : g_images) b = nullptr;
@@ -83,7 +103,10 @@ void draw_fps_counter(BITMAP *dst) {
         if (fps - g_fps_value >= 0.6) g_fps_value = g_fps_value + 1;
         g_fps_frames = 0;
     }
-    textprintf(dst, font, 0x248, 0x1d8, makecol(0xff, 0xff, 0xff), s_FPS___2i_00433380, g_fps_value);
+    // port: com os quadros interpolados o valor passa de 99; o original (x = 0x248) cortaria o ultimo
+    // digito na borda da tela, entao o texto recua 8 px por digito extra.
+    const int extra_digits = g_fps_value >= 1000 ? 2 : g_fps_value >= 100 ? 1 : 0;
+    textprintf(dst, font, 0x248 - 8 * extra_digits, 0x1d8, makecol(0xff, 0xff, 0xff), s_FPS___2i_00433380, g_fps_value);
 }
 
 // 0x0040c170 sound_update_ambient: chuva/trovao e sons de ambiente por mundo.
@@ -91,9 +114,9 @@ void draw_fps_counter(BITMAP *dst) {
 // fora do jogo o comportamento (inclusive as chamadas a rand) e o do original.
 int sound_update_ambient() {
     int r;
-    bool in_game = g_game_state == 1 && room_has_rain_active();
+    bool in_game = g_game_state == 1 && active_room()->raining;
     if (in_game) {
-        g_rain_target = room_rain_level_active() + 1;
+        g_rain_target = active_room()->weather_amount + 1;
     } else {
         g_rain_target = 0;
     }
@@ -108,7 +131,7 @@ int sound_update_ambient() {
     }
 
     int world = -1;
-    if (g_game_state == 1) world = world_index3_from_named(room_named_index_active());
+    if (g_game_state == 1) world = world_index3_from_named(active_room()->wall_named);
     if (g_game_state != 1 || world != g_ambient_world) {
         g_ambient_world = world;
         stop_voice_slot(g_voice_ambient);
@@ -121,9 +144,9 @@ int sound_update_ambient() {
         g_ambient_next = rand() % 300 + 300;
         r = g_game_state;
         if (g_game_state == 1) {
-            int w3 = world_index3_from_named(room_named_index_active()) / 3;
-            if (room_has_rain_active()) {
-                play_sfx_on_voice_vol(0x28, g_voice_ambient, (room_rain_level_active() + 1) / 7);
+            int w3 = world_index3_from_named(active_room()->wall_named) / 3;
+            if (active_room()->raining) {
+                play_sfx_on_voice_vol(0x28, g_voice_ambient, (active_room()->weather_amount + 1) / 7);
                 g_thunder_flash = 1;
                 r = rand();
                 g_ambient_next = r % 300 + 300;
@@ -180,7 +203,7 @@ void game_render() {
             if (!g_transition_active) {
                 render_game_frame(g_backbuffer);
                 if (g_show_fps) {
-                    int id = active_room_id();
+                    int id = active_room()->id;
                     textprintf(g_backbuffer, font, 0, 0, makecol(0xff, 0xff, 0xff), s___02i__02i__0043338c, id % 0x28, id / 0x28);
                 }
                 blit(g_backbuffer, g_render_target, 0, 0, 0, 0, g_screen_w, g_screen_h);
@@ -261,6 +284,112 @@ void game_render() {
     }
 }
 
+
+// ------------------------------------------------------------------ quadros interpolados (port)
+// O jogo original roda a logica a g_ticks_per_second (30 no jogo) e so desenha depois de cada
+// tick. No PC o port desenha quadros EXTRAS entre dois ticks, no ritmo do monitor (vsync), com a
+// posicao de cada objeto interpolada entre o tick anterior e o atual. A logica nao muda: antes do
+// quadro extra as posicoes interpoladas entram pelo mecanismo do proprio jogo (Sprite_invalidate,
+// o mesmo que a fisica usa depois de mover) e, depois, voltam aos valores exatos; o estado do
+// rand() tambem e restaurado (luzes e HUD sorteiam no desenho), entao a sequencia aleatoria do
+// jogo e a mesma do original. So vale no estado de jogo (1), fora de transicoes.
+namespace {
+
+struct SmoothObj { Object *obj; int x, y, z; };
+struct SmoothSnapshot {
+    bool valid = false;
+    Room *room = nullptr;
+    int origin_x = 0, origin_y = 0;
+    std::vector<SmoothObj> objs;
+};
+SmoothSnapshot g_smooth_prev;      // estado antes do ultimo lote de ticks
+uint64_t g_smooth_cur_time = 0;    // instante do ultimo tick processado
+uint64_t g_smooth_last_frame = 0;  // instante do ultimo quadro extra
+
+bool smooth_applicable() {
+    return platform_smooth_enabled() && g_game_state == 1 && !g_transition_active &&
+           g_char_rooms[g_active_room_slot] != nullptr;
+}
+
+void smooth_snapshot() {
+    g_smooth_prev.valid = false;
+    if (!smooth_applicable()) return;
+    Room *r = g_char_rooms[g_active_room_slot];
+    g_smooth_prev.room = r;
+    g_smooth_prev.origin_x = r->origin_x;
+    g_smooth_prev.origin_y = r->origin_y;
+    g_smooth_prev.objs.clear();
+    for (int i = 0; i < r->n_objects; i++)
+        if (Object *o = r->objects[i]) g_smooth_prev.objs.push_back({o, o->x, o->y, o->z});
+    g_smooth_prev.valid = true;
+}
+
+inline int lerp_int(int a, int b, double t) {
+    double v = a + (b - a) * t;
+    return static_cast<int>(v < 0 ? v - 0.5 : v + 0.5);
+}
+inline bool near_delta(int d, int limit) { return d > -limit && d < limit; }
+
+// Desenha um quadro extra se fizer sentido; devolve false se nao desenhou.
+bool smooth_render_frame() {
+    if (!g_smooth_prev.valid || !smooth_applicable()) return false;
+    Room *r = g_char_rooms[g_active_room_slot];
+    if (r != g_smooth_prev.room) return false;
+    const uint64_t now = SDL_GetPerformanceCounter();
+    const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
+    if (now - g_smooth_last_frame < static_cast<uint64_t>(freq / platform_max_fps())) return false;
+    const double period = freq / (g_ticks_per_second > 0 ? g_ticks_per_second : 30);
+    double t = (static_cast<double>(now) - static_cast<double>(g_smooth_cur_time)) / period;
+    if (t >= 0.999) return false;  // ja estamos no estado atual: nada a interpolar ate o proximo tick
+    if (t < 0) t = 0;
+
+    // Posicoes interpoladas (so objetos que ainda estao na sala e andaram pouco: nada de
+    // teletransporte/estacionamento em 0x1000).
+    struct Saved { Object *obj; int x, y, z; };
+    std::vector<Saved> saved;
+    for (const SmoothObj &p : g_smooth_prev.objs) {
+        Object *o = nullptr;
+        for (int i = 0; i < r->n_objects; i++)
+            if (r->objects[i] == p.obj) { o = p.obj; break; }
+        if (!o) continue;
+        int dx = o->x - p.x, dy = o->y - p.y, dz = o->z - p.z;
+        if ((dx | dy | dz) == 0 || !near_delta(dx, 48) || !near_delta(dy, 48) || !near_delta(dz, 48)) continue;
+        saved.push_back({o, o->x, o->y, o->z});
+        o->x = lerp_int(p.x, o->x, t);
+        o->y = lerp_int(p.y, o->y, t);
+        o->z = lerp_int(p.z, o->z, t);
+        Sprite_invalidate(o);
+    }
+    const int ox = r->origin_x, oy = r->origin_y;
+    if (near_delta(ox - g_smooth_prev.origin_x, 64) && near_delta(oy - g_smooth_prev.origin_y, 64)) {
+        r->origin_x = lerp_int(g_smooth_prev.origin_x, ox, t);
+        r->origin_y = lerp_int(g_smooth_prev.origin_y, oy, t);
+    }
+
+    const uint32_t rng = msvc_rand_state();
+    render_game_frame(g_backbuffer);
+    msvc_rand_state() = rng;
+
+    for (const Saved &sv : saved) {
+        sv.obj->x = sv.x;
+        sv.obj->y = sv.y;
+        sv.obj->z = sv.z;
+        Sprite_invalidate(sv.obj);
+    }
+    r->origin_x = ox;
+    r->origin_y = oy;
+
+    if (!g_triple_buffer) g_render_target = screen;
+    blit(g_backbuffer, g_render_target, 0, 0, 0, 0, g_screen_w, g_screen_h);
+    if (g_show_fps) draw_fps_counter(g_render_target);
+    if (g_triple_buffer) request_video_bitmap(g_render_target);
+    else platform_present();
+    g_smooth_last_frame = SDL_GetPerformanceCounter();
+    return true;
+}
+
+}  // namespace
+
 // 0x0040f050 game_main. O port trata --data/--fullscreen antes (src/main.cpp); o resto da linha
 // de comando segue a do original: -r0..-r4 (modo grafico), -b (cores), ou nome do .dat.
 int game_main(int argc, char **argv) {
@@ -296,6 +425,7 @@ int game_main(int argc, char **argv) {
     // win_set_wnd_create_proc: so Windows/Allegro, sem efeito no port.
     srand(static_cast<unsigned>(std::time(nullptr)));
     g_title_variant = rand() % 4;
+    if (const char *f = std::getenv("HOH_SHOW_FPS")) g_show_fps = std::atoi(f) != 0;  // port: = Ctrl+F
 
     install_allegro(0, nullptr, nullptr);
     set_color_depth(0x10);
@@ -318,7 +448,7 @@ int game_main(int argc, char **argv) {
     clear_to_color(g_buffer2, 0);
     clear_to_color(screen, makecol(0, 0, 0));
     g_shadow_buffer = create_bitmap(g_render_target->w, g_render_target->h);
-    if (!load_game_data()) {
+    if (!load_game_data() || !engine_build_game_objects()) {
         allegro_message("Nao foi possivel carregar os dados do jogo original:\n%s\n\n"
                         "Copie HoHOriginal.dat e a pasta Sound para a pasta do jogo\n"
                         "ou use --data <pasta>.", allegro_error);
@@ -339,7 +469,27 @@ int game_main(int argc, char **argv) {
     install_int_ex(timer_tick, 0x1234dd / g_ticks_per_second);
 
     int redraw = g_redraw;  // o original le g_redraw so uma vez, antes do laco
+    // port: diagnostico (HOH_PROFILE=<arquivo>): por segundo, ticks, quadros e tempo de cada etapa
+    const char *prof_path = std::getenv("HOH_PROFILE");
+    const double pf = static_cast<double>(SDL_GetPerformanceFrequency());
+    uint64_t prof_t0 = SDL_GetPerformanceCounter();
+    int prof_ticks = 0, prof_real = 0, prof_extra = 0, prof_idle = 0;
+    double prof_upd = 0, prof_rend = 0, prof_xtra = 0;
     for (;;) {
+        if (prof_path) {
+            uint64_t now = SDL_GetPerformanceCounter();
+            if (now - prof_t0 >= SDL_GetPerformanceFrequency()) {
+                if (FILE *f = std::fopen(prof_path, "a")) {
+                    std::fprintf(f, "estado %d: ticks %d  quadros reais %d (%.1f ms)  extras %d (%.1f ms)  update %.1f ms  ociosos %d" "\n",
+                                 g_game_state, prof_ticks, prof_real, prof_real ? prof_rend / prof_real : 0.0, prof_extra,
+                                 prof_extra ? prof_xtra / prof_extra : 0.0, prof_ticks ? prof_upd / prof_ticks : 0.0, prof_idle);
+                    std::fclose(f);
+                }
+                prof_t0 = now;
+                prof_ticks = prof_real = prof_extra = prof_idle = 0;
+                prof_upd = prof_rend = prof_xtra = 0;
+            }
+        }
         platform_pump();  // port: o Allegro tratava as mensagens do SO numa thread propria
         if (platform_quit_requested()) g_quit = 1;
         if (g_quit) {
@@ -353,12 +503,20 @@ int game_main(int argc, char **argv) {
             return 0;
         }
         if (g_logic_counter < g_tick_counter) {
+            smooth_snapshot();  // port: estado antes do lote, para os quadros interpolados
             do {
+                uint64_t pu = SDL_GetPerformanceCounter();
                 game_update();
+                prof_upd += (SDL_GetPerformanceCounter() - pu) * 1000.0 / pf;
+                prof_ticks++;
                 g_redraw = -1;
                 g_logic_counter = g_logic_counter + 1;
             } while (g_logic_counter < g_tick_counter);
+            g_smooth_cur_time = g_tick_time.load(std::memory_order_relaxed);
+            uint64_t pr = SDL_GetPerformanceCounter();
             game_render();
+            prof_rend += (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf;
+            prof_real++;
             redraw = 0;
             g_redraw = 0;
         } else if (redraw != 0) {
@@ -366,7 +524,14 @@ int game_main(int argc, char **argv) {
             redraw = 0;
             g_redraw = 0;
         } else {
-            SDL_Delay(1);  // port: o original girava a CPU a 100% esperando o timer
+            uint64_t px = SDL_GetPerformanceCounter();
+            if (smooth_render_frame()) {
+                prof_xtra += (SDL_GetPerformanceCounter() - px) * 1000.0 / pf;
+                prof_extra++;
+            } else {
+                prof_idle++;
+                SDL_Delay(1);  // port: o original girava a CPU a 100% esperando o timer
+            }
         }
     }
 }

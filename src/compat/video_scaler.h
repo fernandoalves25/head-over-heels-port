@@ -44,5 +44,6 @@ private:
     int epx_k_ = 0;
     std::vector<uint16_t> epx_buf_;
     std::string capture_path_;
+    ScaleMode current_mode_ = ScaleMode::Sharp;
     void finish();
 };

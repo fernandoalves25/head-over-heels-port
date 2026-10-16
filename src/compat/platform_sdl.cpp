@@ -34,6 +34,8 @@ SDL_Renderer *g_renderer = nullptr;
 VideoScaler g_scaler;
 ScaleMode g_scale_mode = ScaleMode::Smooth3x;  // padrao no PC (F10 alterna; port.cfg guarda)
 bool g_scaler_ready = false;
+bool g_smooth = true;          // quadros interpolados (port.cfg: smooth = 0/1; F9)
+bool g_smooth_cfg_set = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
 bool g_quit = false;
@@ -48,12 +50,15 @@ void load_port_cfg() {
         char line[256];
         while (std::fgets(line, sizeof line, f)) {
             char key_[64] = "", val[128] = "";
-            if (std::sscanf(line, " %63[^= ] = %127s", key_, val) == 2 && std::strcmp(key_, "scaler") == 0)
-                scale_mode_from_name(val, &g_scale_mode);
+            if (std::sscanf(line, " %63[^= ] = %127s", key_, val) == 2) {
+                if (std::strcmp(key_, "scaler") == 0) scale_mode_from_name(val, &g_scale_mode);
+                if (std::strcmp(key_, "smooth") == 0) { g_smooth = std::atoi(val) != 0; g_smooth_cfg_set = true; }
+            }
         }
         std::fclose(f);
     }
     if (const char *env = std::getenv("HOH_SCALER")) scale_mode_from_name(env, &g_scale_mode);
+    if (const char *env = std::getenv("HOH_SMOOTH")) { g_smooth = std::atoi(env) != 0; g_smooth_cfg_set = true; }
 }
 
 void save_port_cfg() {
@@ -61,6 +66,8 @@ void save_port_cfg() {
         std::fprintf(f, "# Opcoes do port (nao existem no jogo original)\n");
         std::fprintf(f, "# scaler: sharp | smooth2x | smooth3x | nearest | integer   (F10 alterna)\n");
         std::fprintf(f, "scaler = %s\n", scale_mode_name(g_scale_mode));
+        std::fprintf(f, "# smooth: 1 = quadros extras interpolados (60/120/144 Hz), 0 = so os 30 do original (F9)\n");
+        std::fprintf(f, "smooth = %d\n", g_smooth ? 1 : 0);
         std::fclose(f);
     }
 }
@@ -68,7 +75,8 @@ void save_port_cfg() {
 void update_window_title() {
     if (!g_window) return;
     char t[128];
-    std::snprintf(t, sizeof t, "Head Over Heels   [F10 escala: %s | F11 tela cheia]", scale_mode_name(g_scale_mode));
+    std::snprintf(t, sizeof t, "Head Over Heels   [F9 fluido: %s | F10 escala: %s | F11 tela cheia]",
+                  g_smooth ? "sim" : "nao", scale_mode_name(g_scale_mode));
     SDL_SetWindowTitle(g_window, t);
 }
 
@@ -257,10 +265,10 @@ void timer_loop() {
 
 // ------------------------------------------------------------------ roteiro de teste automatico
 // Variaveis de ambiente (para testar sem ninguem no teclado, inclusive com SDL_VIDEODRIVER=dummy):
-//   HOH_KEYS="3000:ENTER;3600:DOWN"   (ou separado por virgula) aperta a tecla no instante (ms) e solta 120 ms depois
+//   HOH_KEYS="3000:ENTER;3600:DOWN/800"   (ou por virgula; /ms = segura) aperta a tecla no instante (ms) e solta 120 ms depois
 //   HOH_SHOTS="2500:a.bmp;5000:b.bmp" salva o quadro apresentado no instante (ms)
 //   HOH_AUTOQUIT_MS=8000              pede para sair depois desse tempo
-struct ScriptKey { uint32_t at; int key; bool down_done = false, up_done = false; };
+struct ScriptKey { uint32_t at; int key; uint32_t hold = 120; bool down_done = false, up_done = false; };
 struct ScriptShot { uint32_t at; std::string path; bool done = false; };
 std::vector<ScriptKey> g_script_keys;
 std::vector<ScriptShot> g_script_shots;
@@ -294,7 +302,12 @@ void script_load() {
             p = e + 1;
         }
     };
-    parse(std::getenv("HOH_KEYS"), [](uint32_t at, const std::string &k) { g_script_keys.push_back({at, script_key_code(k)}); });
+    parse(std::getenv("HOH_KEYS"), [](uint32_t at, const std::string &k) {
+        size_t slash = k.find('/');  // "RIGHT/2500" = segura 2,5 s
+        ScriptKey sk{at, script_key_code(k.substr(0, slash))};
+        if (slash != std::string::npos) sk.hold = static_cast<uint32_t>(std::atol(k.c_str() + slash + 1));
+        g_script_keys.push_back(sk);
+    });
     parse(std::getenv("HOH_SHOTS"), [](uint32_t at, const std::string &f) { g_script_shots.push_back({at, f}); });
     parse(std::getenv("HOH_SCALED_SHOTS"), [](uint32_t at, const std::string &f) { g_script_scaled_shots.push_back({at, f}); });
     if (const char *q = std::getenv("HOH_AUTOQUIT_MS")) g_script_quit_at = static_cast<uint32_t>(std::atol(q));
@@ -310,7 +323,7 @@ void script_tick() {
             int ascii = k.key == KEY_ENTER ? 13 : k.key == KEY_ESC ? 27 : k.key == KEY_SPACE ? ' ' : 0;
             g_keybuf.push_back((k.key << 8) | ascii);
         }
-        if (k.down_done && !k.up_done && t >= k.at + 120) {
+        if (k.down_done && !k.up_done && t >= k.at + k.hold) {
             k.up_done = true;
             key[k.key] = 0;
         }
@@ -405,6 +418,10 @@ void allegro_message(const char *fmt, ...) {
     if (!platform_is_handheld()) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Head Over Heels", buf, g_window);
 }
 
+bool platform_set_clipboard_text(const char *text) {
+    return text && SDL_SetClipboardText(text) == 0;
+}
+
 std::string platform_base_path(void) {
     char *p = SDL_GetBasePath();
     if (!p) return "";
@@ -447,6 +464,7 @@ int set_gfx_mode(int card, int w, int h, int, int) {
     if (const char *ws = std::getenv("HOH_WINDOW_SIZE")) std::sscanf(ws, "%dx%d", &win_w, &win_h);  // testes
     load_port_cfg();
     if (handheld) g_scale_mode = ScaleMode::Nearest;  // tela 640x480 nativa: 1:1
+    if (handheld && !g_smooth_cfg_set) g_smooth = false;  // console: 30 quadros como o original (CPU/bateria)
     Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (g_fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     g_window = SDL_CreateWindow("Head Over Heels", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
@@ -507,6 +525,11 @@ void platform_toggle_fullscreen(void) {
 }
 
 bool platform_is_fullscreen(void) { return g_fullscreen; }
+bool platform_smooth_enabled(void) { return g_smooth; }
+int platform_max_fps(void) {
+    static int v = [] { const char *e = std::getenv("HOH_MAX_FPS"); int n = e ? std::atoi(e) : 240; return n > 0 ? n : 240; }();
+    return v;
+}
 bool platform_quit_requested(void) { return g_quit; }
 
 // ------------------------------------------------------------------ eventos
@@ -523,6 +546,14 @@ void platform_pump(void) {
                 }
                 if (e.key.keysym.sym == SDLK_F11) {
                     if (!e.key.repeat) platform_toggle_fullscreen();
+                    break;
+                }
+                if (e.key.keysym.sym == SDLK_F9) {  // port: quadros interpolados
+                    if (!e.key.repeat) {
+                        g_smooth = !g_smooth;
+                        save_port_cfg();
+                        update_window_title();
+                    }
                     break;
                 }
                 if (e.key.keysym.sym == SDLK_F10 && !platform_is_handheld()) {  // port: modo de escala

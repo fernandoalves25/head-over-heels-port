@@ -14,6 +14,9 @@ Teclas
     sharp     pixels nitidos e uniformes em qualquer tamanho
     nearest   pixels crus esticados
     integer   so multiplos inteiros (pixel perfeito, com tarjas)
+- F9: movimento suave (ligado por padrao, fica salvo em port.cfg). A logica continua a
+  30 passos por segundo como no original; entre um passo e outro o port desenha quadros
+  intermediarios na taxa do monitor (60/120/144 Hz). Desligado = 30 quadros, como o original.
 - F11 ou Alt+Enter: alterna janela / tela cheia (a imagem ocupa a tela toda em 4:3).
 - Controles USB/XInput funcionam como joystick (ative em CHANGE CONTROLS).
 
@@ -22,8 +25,7 @@ Linha de comando
 
 Estado atual
 - Abertura, tela-titulo, todos os menus, opcoes, sons e musica ja sao o codigo do jogo original
-  portado. O jogo em si (salas e jogabilidade) ainda esta sendo portado: NEW GAME/OLD GAME
-  mostram um aviso e voltam ao menu.
+  portado, e agora tambem o jogo em si (salas, jogabilidade, saves).
 - O Config.dat gravado e compativel com o HoH.exe original.
 
 Arquivos

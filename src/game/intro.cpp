@@ -6,7 +6,12 @@
 #include "game/gfx_util.h"
 #include "game/globals.h"
 #include "game/menu.h"
-#include "game/pending.h"
+#include "game/controllers.h"
+#include "game/engine_types.h"
+#include "game/gameplay.h"
+#include "game/physics.h"
+#include "game/room_load.h"
+#include "game/room_render.h"
 
 #include <cstring>
 
@@ -14,9 +19,8 @@ namespace hoh {
 
 Star g_stars[600];  // 0x527458, .bss (zeros); preenchido por intro_start
 
-// g_char_rooms[] e g_char_obj[] sao void* em globals.h (Room*/Object* no original).
-static Room *char_room(int slot) { return static_cast<Room *>(g_char_rooms[slot]); }
-static Object *char_obj(int i) { return static_cast<Object *>(g_char_obj[i]); }
+static Room *char_room(int slot) { return g_char_rooms[slot]; }
+static Object *char_obj(int i) { return g_char_obj[i]; }
 
 // 0x004070f0 intro_start: sorteia as estrelas, carrega a sala 0xde (222) com Head e Heels e
 // zera o estado de jogo que a cena usa.
@@ -33,11 +37,11 @@ void intro_start() {
     g_start_room = 0;
     g_char_rooms[0] = load_room(0xde);
     g_cur_char = 0;
-    g_char_room_id[0] = room_id_of(char_room(0));
-    g_player_room_heels = room_id_of(char_room(0));
+    g_char_room_id[0] = char_room(0)->id;
+    g_player_room_heels = char_room(0)->id;
     g_joined = 0;
-    g_char_obj[0] = room_object(char_room(0), 0);
-    g_player_heels = room_object(char_room(0), 1);
+    g_char_obj[0] = char_room(0)->objects[0];
+    g_player_heels = char_room(0)->objects[1];
     Sprite_set_anim_frame(char_obj(0), 0, 1);
     Sprite_set_anim_frame(char_obj(1), 0, 1);
     Room_set_active_player(char_room(0), char_obj(0));
@@ -64,10 +68,10 @@ void intro_start() {
     g_death_frame = 0;
     for (int i = 0; i < 2; i++) {
         Object *obj = char_obj(i);
-        g_entry_x[i] = object_pos_x(obj);
-        g_entry_y[i] = object_pos_y(obj);
-        g_entry_z[i] = object_pos_z(obj);
-        g_entry_anim[i] = object_anim(obj);
+        g_entry_x[i] = obj->x;
+        g_entry_y[i] = obj->y;
+        g_entry_z[i] = obj->z;
+        g_entry_anim[i] = obj->anim;
     }
     g_joined_at_entry = 0;
     g_transition_active = 0;
@@ -155,8 +159,8 @@ void update_state_intro() {
 // sala, nas posicoes isometricas de g_intro_logo_tiles (0x432400).
 void intro_draw_floor_logo(BITMAP *dst) {
     Room *room = char_room(g_active_room_slot);
-    int ox = room_origin_x(room);
-    int oy = room_origin_y(room);
+    int ox = room->origin_x;
+    int oy = room->origin_y;
     for (int i = 0; i < 60; i++) {
         int a = g_intro_logo_tiles[i][0];
         int b = g_intro_logo_tiles[i][1];
@@ -191,8 +195,8 @@ void draw_intro_screen(BITMAP *dst) {
     }
     // original: a rolagem da sala fica no render (+2,-1 por quadro desenhado), sempre no slot 0
     if (g_intro_step == 1 && g_menu_timer > 600 && g_menu_timer < 0x278) {
-        room_origin_x(char_room(0)) = room_origin_x(char_room(0)) + 2;
-        room_origin_y(char_room(0)) = room_origin_y(char_room(0)) - 1;
+        char_room(0)->origin_x = char_room(0)->origin_x + 2;
+        char_room(0)->origin_y = char_room(0)->origin_y - 1;
     }
     intro_draw_floor_logo(dst);
     Room_draw_objects(char_room(0), dst, g_shadows_on, g_shadow_buffer, g_shadows_complex);
@@ -214,7 +218,7 @@ void draw_intro_screen(BITMAP *dst) {
         draw_sprite_lit(dst, dst, 0, 0, (0x20 - alpha) * 8);
         for (int i = 3; i < 12; i++) {
             Room *room = char_room(g_active_room_slot);
-            Sprite_draw(room_object(room, i), dst, room_origin_x(room), room_origin_y(room));
+            Sprite_draw(room->objects[i], dst, room->origin_x, room->origin_y);
         }
         Room_draw_glows(char_room(0), dst);
         clear_to_color(g_bmp_text_line, g_mask_color);

@@ -16,6 +16,12 @@ bool platform_is_fullscreen(void);
 bool platform_is_handheld(void);
 // Pasta do executavel (com '/' no fim) ou "" se indisponivel.
 std::string platform_base_path(void);
+// Copia texto para a area de transferencia do sistema (o original usava a API do Windows).
+bool platform_set_clipboard_text(const char *text);
+// Quadros extras interpolados entre os ticks de logica (60/120/144 Hz no PC; F9 alterna).
+bool platform_smooth_enabled(void);
+// Teto de quadros por segundo dos quadros extras (protege quando nao ha vsync): HOH_MAX_FPS, padrao 240.
+int platform_max_fps(void);
 
 // ------------------------------------------------------------------ musica (substitui o alogg)
 struct MusicStream;

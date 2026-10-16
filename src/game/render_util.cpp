@@ -1,6 +1,7 @@
 // Rotinas pequenas de desenho/consulta usadas pelo front-end e pelo jogo.
 #include "game/globals.h"
-#include "game/pending.h"
+#include "game/room_render.h"
+#include "game/screens.h"
 
 #include <cstring>
 

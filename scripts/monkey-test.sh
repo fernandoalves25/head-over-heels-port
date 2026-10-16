@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 SRC="${1:-/mnt/f/headover/HeadOverHeels}"
 SEED="${2:-1}"
 N="${3:-70}"
+MODE="${4:-menu}"   # menu = teclas aleatorias nos menus; game = entra em NEW GAME e joga
 WORK=/tmp/hoh-monkey-data
 rm -rf "$WORK" && mkdir -p "$WORK/Sound"
 cp "$SRC/HoHOriginal.dat" "$WORK/" && cp "$SRC"/Sound/* "$WORK/Sound/"
@@ -13,11 +14,18 @@ cmake -S . -B build/asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
   -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" > build/asan.log 2>&1 &&
   cmake --build build/asan -j"$(nproc)" --target hoh >> build/asan.log 2>&1 || { tail -20 build/asan.log; exit 1; }
+export MODE
 KEYS=$(python3 - "$SEED" "$N" <<'PY'
 import random, sys
 random.seed(int(sys.argv[1])); n = int(sys.argv[2])
+import os
+game = os.environ.get("MODE") == "game"
 pool = ["DOWN"] * 6 + ["UP"] * 4 + ["ENTER"] * 6 + ["LEFT"] * 3 + ["RIGHT"] * 3 + ["ESC"] * 2 + ["SPACE", "W", "M"]
+if game:
+    pool = ["DOWN"] * 8 + ["UP"] * 8 + ["LEFT"] * 8 + ["RIGHT"] * 8 + ["SPACE"] * 6 + ["ENTER"] * 3 + ["M"] * 2 + ["RCTRL"] * 2 + ["LCTRL"] * 2 + ["ESC"]
 t, out = 3000, []
+if game:
+    out = ["3000:ENTER", "6500:ENTER", "8500:ENTER", "10000:ENTER", "14000:ENTER"]; t = 17000
 for _ in range(n):
     out.append(f"{t}:{random.choice(pool)}")
     t += random.randint(250, 900)
@@ -27,8 +35,14 @@ PY
 END=$(python3 - "$SEED" "$N" <<'PY' 2>&1 >/dev/null
 import random, sys
 random.seed(int(sys.argv[1])); n = int(sys.argv[2])
+import os
+game = os.environ.get("MODE") == "game"
 pool = ["DOWN"] * 6 + ["UP"] * 4 + ["ENTER"] * 6 + ["LEFT"] * 3 + ["RIGHT"] * 3 + ["ESC"] * 2 + ["SPACE", "W", "M"]
+if game:
+    pool = ["DOWN"] * 8 + ["UP"] * 8 + ["LEFT"] * 8 + ["RIGHT"] * 8 + ["SPACE"] * 6 + ["ENTER"] * 3 + ["M"] * 2 + ["RCTRL"] * 2 + ["LCTRL"] * 2 + ["ESC"]
 t = 3000
+if game:
+    t = 17000
 for _ in range(n):
     random.choice(pool); t += random.randint(250, 900)
 print(t + 3000, file=sys.stderr)

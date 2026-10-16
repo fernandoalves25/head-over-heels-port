@@ -28,16 +28,20 @@ Verificado no Linux x86_64 (WSL Ubuntu 24.04, SDL 2.30, vorbisfile 1.3.7): build
 `hoh-datatest` OK, `scripts/smoke-test.sh` (sem janela, capturas em `build/smoke/`) OK e
 janela real via WSLg a ~60 FPS.
 
-Marco 2 — front-end original portado (`src/game/`, 70 funções do `HoH.exe`, cada uma com o
-endereço original no comentário): `game_main` e o laço de passo fixo (30 ticks/s), abertura,
-tela-título, menus (opções, controles, som), fundo de água, transições, fontes em bitmap e
-recoloração HSL, efeitos sonoros por categoria, música, `Config.dat` (mesmo formato do original).
-As globais do jogo são geradas com os valores iniciais do `.data` do exe
-(`../HeadOverHeels/re/port/gen_globals.py`). O motor isométrico (salas e jogabilidade) ainda é
-stub (`src/game/pending_stubs.cpp`): a cena da sala na abertura fica vazia e "PLAY THE GAME"
-ainda não entra no jogo.
+Marco 2 — front-end original portado (`src/game/`): `game_main` e o laço de passo fixo
+(30 ticks/s), abertura, tela-título, menus, fundo de água, transições, fontes em bitmap,
+recoloração HSL, efeitos sonoros, música, `Config.dat` compatível com o original.
 
-Próximo: portar o motor isométrico e a jogabilidade; builds Windows x64, aarch64 (R36S) e Web.
+Marco 3 — **motor isométrico e jogabilidade portados**: as 308 funções de jogo do `HoH.exe`
+estão em C++ (cada uma com o endereço original no comentário), em módulos: `engine_data`
+(blocos, pisos, paredes, mundos), `room_load` (`load_room` lendo o blob original), `room_render`
+(projeção isométrica, oclusão, sombras, iluminação), `physics` (colisão, gravidade, empurrar,
+esteiras), `controllers` (os 22 comportamentos dos objetos), `gameplay` (`update_state_game`,
+troca de sala, Head/Heels, itens) e `screens` (HUD, mapa dos planetas, pausa, fim de jogo,
+saves `Save%i.dat` compatíveis). Tipos em `engine_types.h` com o layout original verificado
+(offsets em 32 bits). O envio de recordes ao servidor da Retrospec (extinto) não abre rede.
+
+Próximo: jogar o jogo inteiro e corrigir diferenças; build Web (WebAssembly).
 
 ## Compilar (Linux / WSL)
 
@@ -54,7 +58,8 @@ Só o núcleo e o teste (sem SDL): `-DHOH_BUILD_GAME=OFF`.
 Atalhos: `scripts/build-linux.sh [pasta_do_jogo]` (configura, compila e roda o teste),
 `scripts/game-smoke.sh [pasta_do_jogo]` (roda o jogo sem janela com teclas roteirizadas e salva
 capturas em `build/game-smoke/`), `scripts/smoke-test.sh` (idem para o visualizador) e
-`scripts/check-syntax.sh [arquivos]`.
+`scripts/check-syntax.sh [arquivos]`, `scripts/play-test.sh` (NEW GAME → primeira sala → anda/pula) e
+`scripts/monkey-test.sh <dados> <semente> <n> game` (ASan/UBSan, teclas aleatórias jogando).
 
 Executáveis: `hoh` (o jogo) e `hoh-viewer` (visualizador de sprites/sons do marco 1).
 
@@ -108,12 +113,22 @@ O jogo desenha em 640×480; o port amplia para a janela/tela inteira mantendo 4:
 A janela abre com ~90% da altura da tela. No R36S (tela 640×480) a imagem é sempre 1:1.
 Teste sem janela: `scripts/scaler-test.sh` (captura a saída ampliada de cada modo).
 
+## Movimento suave (PC)
+
+A lógica roda a 30 passos por segundo (60 nos menus), como no original. Com o movimento suave
+(padrão no PC, **F9** alterna, salvo em `port.cfg` ou `HOH_SMOOTH=0/1`), entre um passo e outro o
+port desenha quadros extras na taxa do monitor: as posições dos objetos são interpoladas entre o
+passo anterior e o atual, o quadro é desenhado e tudo volta ao estado real (inclusive a semente
+do `rand()`), então a jogabilidade não muda. `HOH_MAX_FPS` limita os quadros extras quando não há
+vsync (padrão 240). No R36S fica desligado. `HOH_SHOW_FPS=1` mostra o contador e
+`HOH_PROFILE=arquivo` grava os tempos do laço por segundo.
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
-- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem.
+- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: movimento suave.
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

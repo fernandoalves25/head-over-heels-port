@@ -15,4 +15,8 @@ void draw_fps_counter(BITMAP *dst);    // 0x0040e150
 float int_div_float(int a, float b);   // 0x00402170
 int sound_update_ambient();            // 0x0040c170
 
+// Aviso do port na parte de baixo da tela (por g_port_notice_ticks ticks).
+extern int g_port_notice_ticks;
+extern const char *g_port_notice;
+
 }  // namespace hoh

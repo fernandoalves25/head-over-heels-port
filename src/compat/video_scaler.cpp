@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -115,8 +117,35 @@ void VideoScaler::fit(int out_w, int out_h, double *scale, SDL_Rect *dst) const 
     *dst = {(out_w - dw) / 2, (out_h - dh) / 2, dw, dh};
 }
 
+namespace {
+// Diagnostico: HOH_PROFILE=<arquivo> grava a media de cada etapa a cada 60 quadros.
+struct Prof {
+    const char *path = std::getenv("HOH_PROFILE");
+    double t[4] = {0, 0, 0, 0};  // ampliacao na CPU, envio da textura, desenho, present (inclui vsync)
+    int n = 0;
+    uint64_t mark = 0;
+    void start() { mark = SDL_GetPerformanceCounter(); }
+    void lap(int i) {
+        uint64_t now = SDL_GetPerformanceCounter();
+        t[i] += (now - mark) * 1000.0 / SDL_GetPerformanceFrequency();
+        mark = now;
+    }
+    void frame(const char *mode) {
+        if (!path || ++n < 60) return;
+        if (FILE *f = std::fopen(path, "a")) {
+            std::fprintf(f, "[%s] cpu %.2f  upload %.2f  draw %.2f  present %.2f ms" "\n", mode, t[0] / n, t[1] / n, t[2] / n, t[3] / n);
+            std::fclose(f);
+        }
+        t[0] = t[1] = t[2] = t[3] = 0;
+        n = 0;
+    }
+} g_prof;
+}  // namespace
+
 void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
     if (!r_ || !src_ || !frame) return;
+    g_prof.start();
+    current_mode_ = mode;
     int ow = 0, oh = 0;
     SDL_GetRendererOutputSize(r_, &ow, &oh);
     double s;
@@ -138,15 +167,20 @@ void VideoScaler::present(const BITMAP *frame, ScaleMode mode) {
         if (epx_) {
             if (k == 2) scale2x(frame->dat, w_, h_, epx_buf_.data());
             else scale3x(frame->dat, w_, h_, epx_buf_.data());
+            g_prof.lap(0);
             SDL_UpdateTexture(epx_, nullptr, epx_buf_.data(), w_ * k * static_cast<int>(sizeof(uint16_t)));
+            g_prof.lap(1);
             SDL_RenderCopy(r_, epx_, nullptr, &dst);
+            g_prof.lap(2);
             finish();
             return;
         }
         mode = ScaleMode::Sharp;
     }
 
+    g_prof.lap(0);
     SDL_UpdateTexture(src_, nullptr, frame->dat, frame->w * static_cast<int>(sizeof(uint16_t)));
+    g_prof.lap(1);
     if (mode == ScaleMode::Integer) {
         int k = std::max(1, static_cast<int>(std::floor(s)));
         SDL_Rect d = {(ow - w_ * k) / 2, (oh - h_ * k) / 2, w_ * k, h_ * k};
@@ -189,5 +223,8 @@ void VideoScaler::finish() {
         }
         capture_path_.clear();
     }
+    if (current_mode_ != ScaleMode::Smooth2x && current_mode_ != ScaleMode::Smooth3x) g_prof.lap(2);
     SDL_RenderPresent(r_);
+    g_prof.lap(3);
+    g_prof.frame(scale_mode_name(current_mode_));
 }
