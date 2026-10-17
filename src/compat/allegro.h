@@ -42,6 +42,10 @@ struct BITMAP {
     int is_video;        // criado por create_video_bitmap
     uint16_t *dat;       // w*h pixels RGB565, linhas contiguas (pitch == w)
     uint16_t **line;     // line[y] == dat + y*w; o jogo le dados direto em line[0]
+    // port (renderizador HD, compat/hd_render.h): etiqueta da imagem de origem (0 = nenhuma) e
+    // lista de desenho gravada neste bitmap (so no quadro do jogo).
+    int hd_tag;
+    void *hd_list;
 };
 
 BITMAP *create_bitmap(int width, int height);

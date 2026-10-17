@@ -8,6 +8,8 @@
 // transferencia e mostrado na tela, como no original.
 #include "game/screens.h"
 
+#include "compat/hd_render.h"
+
 #include "game/controllers.h"
 #include "game/gameplay.h"
 #include "game/gfx_util.h"
@@ -196,6 +198,7 @@ void hud_draw(BITMAP *dst) {
 
 // 0x00406570 render_game_frame
 void render_game_frame(BITMAP *dst) {
+    hd::frame_begin(dst);  // port: grava a lista do quadro para o renderizador HD
     clear_to_color(dst, 0);
     Room_draw(g_char_rooms[g_active_room_slot], dst, g_shadows_on, g_shadow_buffer, g_shadows_complex);
     hud_draw(dst);

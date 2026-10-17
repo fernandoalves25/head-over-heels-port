@@ -6,6 +6,7 @@
 #include <SDL.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,9 @@ public:
     void present(const BITMAP *frame, ScaleMode mode);
     // Mostra de novo o ultimo quadro, sem ampliar nem enviar a textura (com vsync: mais um retraco).
     void present_again();
+    // Quadro desenhado por fora (renderizador HD): draw(renderer, alvo, w, h) desenha num alvo de
+    // w x h (a resolucao nativa do pacote), que depois e reduzido com filtro para a area 4:3 da janela.
+    void present_custom(int w, int h, const std::function<void(SDL_Renderer *, SDL_Texture *, int, int)> &draw);
     // SDL_GetPerformanceCounter() logo antes do ultimo SDL_RenderPresent (fim do trabalho do quadro).
     uint64_t submit_time() const { return submit_time_; }
     // Teste: salva em BMP o quadro final (na resolucao de saida) no proximo present.
@@ -50,6 +54,9 @@ private:
     std::vector<uint16_t> epx_buf_;
     std::string capture_path_;
     ScaleMode current_mode_ = ScaleMode::Sharp;
+    SDL_Texture *custom_ = nullptr;    // alvo do present_custom
+    bool hd_frame_ = false;            // finish() de um present_custom (rotulo do diagnostico)
+    int custom_w_ = 0, custom_h_ = 0;
     SDL_Texture *last_tex_ = nullptr;  // ultima textura copiada para a tela
     SDL_Rect last_dst_ = {0, 0, 0, 0};
     uint64_t submit_time_ = 0;

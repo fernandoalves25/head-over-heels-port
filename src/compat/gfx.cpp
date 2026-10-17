@@ -1,5 +1,6 @@
 // Bitmaps e primitivas de desenho 16 bpp (RGB565), semantica do Allegro 4.0.
 #include "compat/allegro.h"
+#include "compat/hd_render.h"
 
 #include <algorithm>
 #include <cmath>
@@ -71,6 +72,7 @@ BITMAP *create_video_bitmap(int width, int height) { return new_bitmap(width, he
 
 void destroy_bitmap(BITMAP *bmp) {
     if (!bmp) return;
+    hd::forget(bmp);
     std::free(bmp->dat);
     delete[] bmp->line;
     delete bmp;
@@ -102,16 +104,22 @@ int getpixel(BITMAP *bmp, int x, int y) {
 }
 
 void putpixel(BITMAP *bmp, int x, int y, int color) {
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp)) hd::op_fill(bmp, x, y, x, y, color);
     ClipRect c = clip_of(bmp);
     if (x < c.l || y < c.t || x >= c.r || y >= c.b) return;
     bmp->line[y][x] = static_cast<uint16_t>(color);
 }
 
 void clear_to_color(BITMAP *bmp, int color) {
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp)) hd::op_clear(bmp, color);
     std::fill(bmp->dat, bmp->dat + static_cast<size_t>(bmp->w) * bmp->h, static_cast<uint16_t>(color));
 }
 
 void rectfill(BITMAP *bmp, int x1, int y1, int x2, int y2, int color) {
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp)) hd::op_fill(bmp, x1, y1, x2, y2, color);
     if (x2 < x1) std::swap(x1, x2);
     if (y2 < y1) std::swap(y1, y2);
     ClipRect c = clip_of(bmp);
@@ -130,7 +138,16 @@ void circlefill(BITMAP *bmp, int x, int y, int radius, int color) {
 }
 
 void blit(BITMAP *s, BITMAP *d, int sx, int sy, int dx, int dy, int w, int h) {
-    if (!s || !d || !clip_blit(s, d, sx, sy, dx, dy, w, h)) return;
+    if (!s || !d) return;
+    hd::Nest nest;
+    if (nest.outer && (s->hd_list || d->hd_list)) {
+        // quadro inteiro copiado (backbuffer -> tela): a lista vai junto
+        if (!sx && !sy && !dx && !dy && w == s->w && h == s->h && s->w == d->w && s->h == d->h)
+            hd::list_copy(s, d);
+        else if (d->hd_list && hd::touch(d))
+            hd::op_sprite(d, s, sx, sy, w, h, dx, dy, hd::OPAQUE);
+    }
+    if (!clip_blit(s, d, sx, sy, dx, dy, w, h)) return;
     // Mesma imagem com sobreposicao: copiar de baixo para cima quando o destino esta abaixo.
     if (s == d && dy > sy) {
         for (int j = h - 1; j >= 0; j--)
@@ -142,7 +159,10 @@ void blit(BITMAP *s, BITMAP *d, int sx, int sy, int dx, int dy, int w, int h) {
 }
 
 void masked_blit(BITMAP *s, BITMAP *d, int sx, int sy, int dx, int dy, int w, int h) {
-    if (!s || !d || !clip_blit(s, d, sx, sy, dx, dy, w, h)) return;
+    if (!s || !d) return;
+    hd::Nest nest;
+    if (nest.outer && d->hd_list && hd::touch(d)) hd::op_sprite(d, s, sx, sy, w, h, dx, dy, hd::MASKED);
+    if (!clip_blit(s, d, sx, sy, dx, dy, w, h)) return;
     for (int j = 0; j < h; j++) {
         const uint16_t *src = s->line[sy + j] + sx;
         uint16_t *dst = d->line[dy + j] + dx;
@@ -158,6 +178,9 @@ void draw_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y) {
 // Espelhado na horizontal (vtable +0x4c no HoH.exe), com mascara.
 void draw_sprite_h_flip(BITMAP *bmp, BITMAP *sprite, int x, int y) {
     if (!bmp || !sprite) return;
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp))
+        hd::op_sprite(bmp, sprite, 0, 0, sprite->w, sprite->h, x, y, hd::MASKED | hd::HFLIP);
     ClipRect c = clip_of(bmp);
     int x0 = std::max(x, c.l), x1 = std::min(x + sprite->w, c.r);
     int y0 = std::max(y, c.t), y1 = std::min(y + sprite->h, c.b);
@@ -176,6 +199,14 @@ void vline(BITMAP *bmp, int x, int y1, int y2, int color) { rectfill(bmp, x, y1,
 
 void stretch_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y, int w, int h) {
     if (!bmp || !sprite || w <= 0 || h <= 0) return;
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp)) {  // HD: a imagem ja esticada, como copia 1x
+        BITMAP *tmp = create_bitmap(w, h);
+        clear_to_color(tmp, MASK_COLOR_16);
+        stretch_sprite(tmp, sprite, 0, 0, w, h);
+        hd::op_sprite(bmp, tmp, 0, 0, w, h, x, y, hd::MASKED);
+        destroy_bitmap(tmp);
+    }
     ClipRect c = clip_of(bmp);
     int x0 = std::max(x, c.l), x1 = std::min(x + w, c.r);
     int y0 = std::max(y, c.t), y1 = std::min(y + h, c.b);
@@ -197,6 +228,9 @@ void stretch_sprite(BITMAP *bmp, BITMAP *sprite, int x, int y, int w, int h) {
 void fblend_trans(BITMAP *src, BITMAP *dst, int x, int y, int fact) {
     if (!src || !dst) return;
     int f = (std::clamp(fact, 0, 255) + 7) >> 3;
+    hd::Nest nest;
+    if (nest.outer && dst->hd_list && hd::touch(dst) && f > 0)
+        hd::op_sprite(dst, src, 0, 0, src->w, src->h, x, y, hd::MASKED, hd::kFull, std::min(f, 32));
     if (f >= 32) { draw_sprite(dst, src, x, y); return; }
     if (f <= 0) return;
     if (f == 16) {
@@ -217,6 +251,9 @@ void fblend_add(BITMAP *src, BITMAP *dst, int x, int y, int fact) {
     int f = (std::clamp(fact, 0, 255) + 7) >> 3;
     if (f <= 0) return;
     f = std::min(f, 32);
+    hd::Nest nest;
+    if (nest.outer && dst->hd_list && hd::touch(dst))
+        hd::op_sprite(dst, src, 0, 0, src->w, src->h, x, y, hd::MASKED | hd::ADD, hd::kFull, f);
     sprite_op(src, dst, x, y, [f](uint16_t s, uint16_t d) {
         int sr = (r5(s) * f) >> 5, sg = (((s >> 6) & 31) * f) >> 5, sb = (b5(s) * f) >> 5;
         int g = std::min(31, ((d >> 6) & 31) + sg);

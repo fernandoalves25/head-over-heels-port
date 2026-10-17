@@ -2,6 +2,7 @@
 // os textos de verdade usam a fonte em bitmap que vem no HoHOriginal.dat).
 // Glifos 5x7 desenhados para este projeto; minusculas usam o glifo maiusculo.
 #include "compat/allegro.h"
+#include "compat/hd_render.h"
 
 #include <cctype>
 #include <cstdarg>
@@ -95,6 +96,14 @@ void textout(BITMAP *bmp, const FONT *f, const char *s, int x, int y, int color)
     if (!bmp || !s) return;
     if (!f) f = &g_font;
     if (color < 0) color = 0xFFFF;  // -1 no Allegro = cores da propria fonte; aqui, branco
+    hd::Nest nest;
+    if (nest.outer && bmp->hd_list && hd::touch(bmp) && *s) {  // HD: o texto vai como uma copia 1x
+        BITMAP *tmp = create_bitmap(static_cast<int>(std::strlen(s)) * f->cell_w, f->cell_h);
+        clear_to_color(tmp, MASK_COLOR_16);
+        textout(tmp, f, s, 0, 0, color);
+        hd::op_sprite(bmp, tmp, 0, 0, tmp->w, tmp->h, x, y, hd::MASKED);
+        destroy_bitmap(tmp);
+    }
     for (; *s; s++, x += f->cell_w) {
         const char *rows = glyph_for(*s);
         if (!rows || std::strlen(rows) != 35) continue;

@@ -2,6 +2,7 @@
 // Portado de HoH.exe (Retrospec 2003); pseudo-C em re/port/frontend.c, FPU conferida no disassembly.
 #include "game/gfx_util.h"
 
+#include "compat/hd_render.h"
 #include "game/data_bridge.h"
 #include "game/globals.h"
 #include "game/menu.h"
@@ -223,6 +224,7 @@ BITMAP *create_grayscale_bitmap(BITMAP *src) {
             putpixel(dst, x, y, out);  // original: vtable+0x24
         }
     }
+    hd::tag_gray_copy(dst, src);  // port: no HD, a imagem ampliada em cinza
     return dst;
 }
 
@@ -230,6 +232,7 @@ BITMAP *create_grayscale_bitmap(BITMAP *src) {
 void bitmap_make_h_flip(BITMAP *src, BITMAP *dst) {
     clear_to_color(dst, makecol(0xff, 0, 0xff));
     draw_sprite_h_flip(dst, src, 0, 0);
+    hd::tag_flip_copy(dst, src);  // port: a versao HD e a mesma imagem, espelhada
 }
 
 // 0x0040e8b0 register_bitmap

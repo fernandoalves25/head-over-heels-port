@@ -12,15 +12,25 @@
 //   (luz, escurecimento da sombra) sao feitas em uint32_t como no exe (mul/shr sem sinal).
 #include "game/room_render.h"
 
+#include "compat/hd_render.h"
 #include "game/engine_data.h"  // bitmap_apply_mask
 #include "game/globals.h"      // rand() do MSVC (crt.h), g_vtbl_Flare
 #include "game/room_load.h"    // Room_update_attached_lights
 
+#include <algorithm>
 #include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 namespace hoh {
 
+void hd_emit_objects(Room *self, BITMAP *dst, bool shadows_on);  // port (HD), abaixo
+
 namespace {
+
+// port (HD): objetos que recortaram cada work_bmp (ver hd_emit_objects). Chaves e valores so sao
+// comparados, nunca seguidos: um objeto ja destruido simplesmente nao aparece mais na sala.
+std::unordered_map<const void *, std::vector<const void *>> g_cut_by;
 
 inline uint16_t mask_color16() { return static_cast<uint16_t>(makecol(0xff, 0, 0xff)); }
 
@@ -154,6 +164,7 @@ void Sprite_draw_received_shadow(Sprite *self, BITMAP *dst, int origin_x, int or
 
 // 0x0040ff10 Sprite_restore_work_bitmap
 void Sprite_restore_work_bitmap(Sprite *self) {
+    g_cut_by.erase(self);  // port (HD): o work_bmp volta inteiro
     BITMAP *src = self->cur_img;
     blit(src, self->work_bmp, 0, 0, 0, 0, src->w, src->h);
 }
@@ -203,6 +214,11 @@ void Room_draw_floor_and_shadows(Room *self, BITMAP *dst, bool shadows_complex, 
 // (shadows_on), depois os transparentes. shadow_buf/shadows_complex nao sao lidos (ret 0x10).
 void Room_draw_objects(Room *self, BITMAP *dst, bool shadows_on, BITMAP *shadow_buf,
                        bool shadows_complex) {
+    // port (HD): o desenho 1x abaixo nao vai para a lista; os objetos sao emitidos depois, inteiros
+    // e ordenados por profundidade (hd_emit_objects).
+    const bool hd_rec = dst->hd_list && hd::touch(dst);
+    {
+    hd::Suppress hd_off;
     Room_update_occlusion(self);
     if (shadows_on) {
         Room_cast_shadows_on_objects(self);
@@ -245,6 +261,75 @@ void Room_draw_objects(Room *self, BITMAP *dst, bool shadows_on, BITMAP *shadow_
                 obj->dirty = true;
             }
             Sprite_draw_translucent(obj, dst, self->origin_x, self->origin_y);
+        }
+    }
+    }
+    if (hd_rec) hd_emit_objects(self, dst, shadows_on);
+}
+
+// port (HD): o 1x nao ordena os objetos; cada um e recortado (magenta no work_bmp) onde um
+// objeto da frente o cobre (object_cut_occluded), e esses recortes persistem ate o work_bmp ser
+// restaurado. No HD os quadros vao inteiros, entao a ordem de desenho sai dos mesmos recortes:
+// quem recortou vem depois de quem foi recortado (ordenacao topologica; empate ou ciclo, a ordem
+// da lista). Os transparentes vem por ultimo, como no 1x.
+void hd_emit_objects(Room *self, BITMAP *dst, bool shadows_on) {
+    const int n = self->n_objects;
+    std::vector<int> opaque, transp;
+    for (int i = 0; i < n; i++) {
+        const Object *o = self->objects[i];
+        if (o->hidden) continue;
+        (o->transparent ? transp : opaque).push_back(i);
+    }
+    std::vector<std::vector<int>> after(n);  // after[i]: desenhar depois de i
+    std::vector<int> pending(n, 0);
+    auto cut = [&](int back, int front) {  // back foi recortado por front?
+        auto it = g_cut_by.find(static_cast<const Sprite *>(self->objects[back]));
+        if (it == g_cut_by.end()) return false;
+        return std::find(it->second.begin(), it->second.end(),
+                         static_cast<const void *>(static_cast<const Sprite *>(self->objects[front]))) != it->second.end();
+    };
+    auto edge = [&](int first, int then) {
+        after[first].push_back(then);
+        pending[then]++;
+    };
+    for (size_t a = 0; a < opaque.size(); a++) {
+        for (size_t b = a + 1; b < opaque.size(); b++) {
+            const int i = opaque[a], j = opaque[b];
+            const Object *oi = self->objects[i], *oj = self->objects[j];
+            // retangulos de tela que se cruzam (sem sobreposicao a ordem nao importa no 1x)
+            if (!(oi->scr_x < oj->scr_x + oj->cur_img->w && oj->scr_x < oi->scr_x + oi->cur_img->w &&
+                  -oi->scr_y < -oj->scr_y + oj->cur_img->h && -oj->scr_y < -oi->scr_y + oi->cur_img->h))
+                continue;
+            const bool i_cut = cut(i, j), j_cut = cut(j, i);
+            if (i_cut && !j_cut) edge(i, j);       // j na frente de i
+            else if (j_cut && !i_cut) edge(j, i);  // i na frente de j
+            else edge(i, j);                       // sem recorte (ou mutuo): vence o desenhado depois
+        }
+    }
+    std::vector<int> order;
+    std::vector<char> done(n, 0);
+    for (size_t step = 0; step < opaque.size(); step++) {
+        int pick = -1;
+        for (int i : opaque)
+            if (!done[i] && pending[i] == 0) { pick = i; break; }
+        if (pick < 0)  // ciclo (recorte mutuo): segue a ordem da lista
+            for (int i : opaque)
+                if (!done[i]) { pick = i; break; }
+        done[pick] = 1;
+        order.push_back(pick);
+        for (int f : after[pick]) pending[f]--;
+    }
+    order.insert(order.end(), transp.begin(), transp.end());
+    for (int i : order) {
+        Object *obj = self->objects[i];
+        BITMAP *img = obj->cur_img;
+        const int x = self->origin_x + obj->scr_x, y = self->origin_y - obj->scr_y;
+        const int tint = self->dark ? (obj->light >> 3) : hd::kFull;
+        const int alpha = obj->transparent ? std::min(hd::kFull, ((0xff - obj->alpha) + 7) >> 3) : hd::kFull;
+        hd::op_sprite(dst, img, 0, 0, img->w, img->h, x, y, hd::MASKED, tint, alpha);
+        if (shadows_on && obj->has_recv_shadow) {
+            BITMAP *s = obj->recv_shadow;
+            hd::op_sprite(dst, s, 0, 0, s->w, s->h, x, y, hd::MASKED | hd::LINEAR, hd::kFull, (100 + 7) >> 3);
         }
     }
 }
@@ -292,6 +377,11 @@ void Room_update_occlusion(Room *self) {
 // 0x00413530 object_cut_occluded (ret 8; o ecx do chamador e ignorado): pinta magenta no work_bmp
 // de obj onde o quadro (cur_img) de front e opaco, deslocado pela diferenca das posicoes de tela.
 void object_cut_occluded(Object *obj, Object *front) {
+    {  // port (HD): front fica na frente de obj
+        std::vector<const void *> &v = g_cut_by[static_cast<const Sprite *>(obj)];
+        if (std::find(v.begin(), v.end(), static_cast<const Sprite *>(front)) == v.end())
+            v.push_back(static_cast<const Sprite *>(front));
+    }
     const uint16_t mask = mask_color16();
     BITMAP *work = obj->work_bmp;
     BITMAP *fimg = front->cur_img;
@@ -427,9 +517,21 @@ void object_shadow_extend_sides(Object *obj) {
 // escurecidos, para que sombras sobrepostas nao escurecam duas vezes.
 void Room_draw_floor_shadows_buffered(Room *self, BITMAP *dst, BITMAP *shadow_buf) {
     clear_to_color(shadow_buf, makecol(0xff, 0, 0xff));
+    // port (HD): a uniao das silhuetas escurece uma vez so para 19/32, como o shadow_buf faz em 1x
+    const bool hd_rec = dst->hd_list && hd::touch(dst);
+    if (hd_rec) hd::group_begin(dst, hd::kFull - 0x13);
     for (int i = 0; i < self->n_objects; i++) {
-        if (!self->objects[i]->hidden) Room_draw_floor_shadow_buffered(self, i, dst, shadow_buf);
+        if (!self->objects[i]->hidden) {
+            Room_draw_floor_shadow_buffered(self, i, dst, shadow_buf);
+            if (hd_rec) {
+                Object *obj = self->objects[i];
+                BITMAP *s = obj->cur_shadow;
+                hd::op_sprite(dst, s, 0, 0, s->w, s->h, obj->shadow_scr_x + self->origin_x,
+                              self->origin_y - obj->shadow_scr_y, hd::MASKED);
+            }
+        }
     }
+    if (hd_rec) hd::group_end(dst);
 }
 
 // 0x00413ba0 Room_draw_floor_shadow_buffered: silhueta cur_shadow do objeto index em
@@ -794,6 +896,8 @@ void Room_light_walls(Room *self, int tile) {
 // 0x004159f0 draw_sprite_h_flip_lit: draw_sprite_lit espelhado na horizontal (mesmo recorte: so
 // contra o tamanho do destino, a altura com o y original), luz em 32 avos (light >> 3).
 void draw_sprite_h_flip_lit(BITMAP *dst, BITMAP *sprite, int x, int y, int light) {
+    if (dst->hd_list && hd::touch(dst))  // port: renderizador HD
+        hd::op_sprite(dst, sprite, 0, 0, sprite->w, sprite->h, x, y, hd::MASKED | hd::HFLIP, light >> 3);
     const uint32_t mask = static_cast<uint32_t>(makecol(0xff, 0, 0xff));
     const int y_orig = y;
     const int f = light >> 3;

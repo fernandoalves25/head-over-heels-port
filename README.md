@@ -140,12 +140,38 @@ o contador; `HOH_PROFILE=arquivo` grava por segundo o ritmo (taxa do monitor, al
 retraços perdidos, tempo de trabalho por quadro) e os tempos do laço; `HOH_REFRESH=N` finge um
 monitor de N Hz (testes).
 
+## Gráficos HD (PC)
+
+Pacotes de sprites ampliados trocam os gráficos do jogo por versões HD, sem mudar a jogabilidade.
+O jogo continua desenhando o quadro em 640×480 exatamente como antes; cada desenho é gravado numa
+lista (`src/compat/hd_core.cpp`) e, no present, a lista é refeita na GPU (`hd_render.cpp`) com as
+imagens do pacote, na resolução nativa dele (2560×1920 com pacotes 4×), e só então reduzida para a
+janela. **F8** alterna desligado → cada pacote; fica salvo em `port.cfg` (`hd = <pacote>|off`, ou
+`HOH_HD=...`).
+
+- Pacotes: `<pasta dos dados>/hd/<pacote>/<nome>.qoi` (ou `HOH_HD_DIR`), um arquivo por imagem do
+  `HoHOriginal.dat`, com os nomes do export de `re/tools/hohfmt.py` (`block000_d0_f00_a`,
+  `mobile000_f00`, `named_000_Dungeon_f00`, `world0_main`, `image00_48x29`...). Imagem que falta
+  usa a original, sem filtro.
+- Pisos e paredes são recortes das imagens do arquivo (ladrilhos de 16 px, células de 8×12): o port
+  roda o mesmo recorte sobre imagens de coordenadas para saber de onde veio cada pixel e monta o
+  ladrilho HD com os blocos correspondentes (`src/game/hd_assets.cpp`).
+- Objetos: o jogo não ordena por profundidade, ele recorta cada objeto onde outro está na frente.
+  O HD desenha os quadros inteiros na ordem dada pelos próprios recortes.
+- Só o jogo usa o HD; abertura, menus e mapa continuam no modo clássico. No R36S fica desligado.
+- Gerar os pacotes (scripts em `HeadOverHeels/re/remaster`, fora deste repositório porque usam os
+  gráficos do jogo): `hohfmt.py sprites` → `upscale.py` (Real-ESRGAN ncnn-vulkan, 4×, mantendo a
+  transparência) → `make_qoi.py`. Os pacotes são derivados do jogo: não redistribuir.
+- Testes: `scripts/hd-tour.sh` desenha as 276 salas e confere se a lista refaz o quadro 1x pixel a
+  pixel (hoje: 0 diferenças); `HOH_HD_VERIFY=arquivo` faz a mesma conta durante o jogo.
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
-- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: quadros por segundo (auto, 120, 60, 30).
+- Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: quadros por segundo (auto, 120, 60, 30);
+  F8: pacote de gráficos HD.
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

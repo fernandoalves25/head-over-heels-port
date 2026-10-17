@@ -3,6 +3,8 @@
 
 #include <string>
 
+struct BITMAP;
+
 // Processa eventos do SO (teclado, controles, janela). As funcoes de entrada do Allegro ja
 // chamam isto; o laco principal deve chamar ao menos uma vez por quadro.
 void platform_pump(void);
@@ -18,6 +20,10 @@ bool platform_is_handheld(void);
 std::string platform_base_path(void);
 // Copia texto para a area de transferencia do sistema (o original usava a API do Windows).
 bool platform_set_clipboard_text(const char *text);
+// Testes: salva em BMP a imagem final (na resolucao da janela) do proximo present.
+void platform_capture_next(const char *path);
+// Testes: salva um bitmap 16 bpp em BMP 24 bits.
+void platform_save_bitmap(BITMAP *bmp, const char *path);
 // Quadros interpolados entre os ticks de logica (F9: auto -> taxa do monitor -> metade -> 30).
 bool platform_smooth_enabled(void);
 // Em volta de cada quadro interpolado: o fim segura o ritmo (a taxa do monitor dividida por um

@@ -5,6 +5,7 @@
 #include "game/gfx_util.h"
 #include "game/globals.h"
 #include "game/intro.h"
+#include "game/hd_assets.h"
 #include "game/menu.h"
 #include "game/music.h"
 #include "game/engine_data.h"
@@ -452,16 +453,24 @@ int game_main(int argc, char **argv) {
     clear_to_color(g_buffer2, 0);
     clear_to_color(screen, makecol(0, 0, 0));
     g_shadow_buffer = create_bitmap(g_render_target->w, g_render_target->h);
-    if (!load_game_data() || !engine_build_game_objects()) {
+    const bool data_ok = load_game_data();
+    if (data_ok) hd_register_assets();  // port: nomes das imagens nos pacotes HD
+    if (!data_ok || !engine_build_game_objects()) {
         allegro_message("Nao foi possivel carregar os dados do jogo original:\n%s\n\n"
                         "Copie HoHOriginal.dat e a pasta Sound para a pasta do jogo\n"
                         "ou use --data <pasta>.", allegro_error);
         allegro_exit();
         return -1;
     }
+    hd_tag_sets();  // port: ladrilhos de piso e celulas de parede no renderizador HD
     init_ui_graphics();
     water_init();
     intro_start();
+    if (const char *tour = std::getenv("HOH_HD_ROOMTOUR")) {  // port: teste do renderizador HD
+        hd_room_tour(tour);
+        allegro_exit();
+        return 0;
+    }
     reserve_voices(0x10, -1);
     if (install_sound(DIGI_AUTODETECT, MIDI_NONE, nullptr) != 0)
         std::fprintf(stderr, s_Failed_to_initialise_sound_drive_00433400, allegro_error);

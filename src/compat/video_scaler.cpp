@@ -102,12 +102,13 @@ bool VideoScaler::init(SDL_Renderer *r, int w, int h) {
 }
 
 void VideoScaler::shutdown() {
-    for (SDL_Texture **t : {&src_, &prescaled_, &epx_})
+    for (SDL_Texture **t : {&src_, &prescaled_, &epx_, &custom_})
         if (*t) {
             SDL_DestroyTexture(*t);
             *t = nullptr;
         }
     prescale_k_ = epx_k_ = 0;
+    custom_w_ = custom_h_ = 0;
     last_tex_ = nullptr;
 }
 
@@ -228,7 +229,7 @@ void VideoScaler::finish() {
     submit_time_ = SDL_GetPerformanceCounter();
     SDL_RenderPresent(r_);
     g_prof.lap(3);
-    g_prof.frame(scale_mode_name(current_mode_));
+    g_prof.frame(hd_frame_ ? "hd" : scale_mode_name(current_mode_));
 }
 
 void VideoScaler::draw_final(SDL_Texture *t, const SDL_Rect &dst) {
@@ -245,4 +246,36 @@ void VideoScaler::present_again() {
     SDL_RenderClear(r_);
     SDL_RenderCopy(r_, last_tex_, nullptr, &last_dst_);
     SDL_RenderPresent(r_);
+}
+
+void VideoScaler::present_custom(int w, int h, const std::function<void(SDL_Renderer *, SDL_Texture *, int, int)> &draw) {
+    if (!r_ || w <= 0 || h <= 0) return;
+    g_prof.start();
+    int ow = 0, oh = 0;
+    SDL_GetRendererOutputSize(r_, &ow, &oh);
+    double s;
+    SDL_Rect dst;
+    fit(ow, oh, &s, &dst);
+    if (dst.w <= 0 || dst.h <= 0) return;
+    if (!custom_ || custom_w_ != w || custom_h_ != h) {
+        if (custom_) SDL_DestroyTexture(custom_);
+        custom_ = make_texture(w, h, SDL_TEXTUREACCESS_TARGET, true);  // reduzido com filtro na tela
+        custom_w_ = custom_ ? w : 0;
+        custom_h_ = custom_ ? h : 0;
+    }
+    if (!custom_ || SDL_SetRenderTarget(r_, custom_) != 0) return;
+    SDL_SetRenderDrawColor(r_, 0, 0, 0, 255);
+    SDL_RenderClear(r_);
+    draw(r_, custom_, w, h);
+    g_prof.lap(0);
+    SDL_SetRenderTarget(r_, nullptr);
+    SDL_SetRenderDrawBlendMode(r_, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(r_, 0, 0, 0, 255);
+    SDL_RenderClear(r_);
+    SDL_SetTextureBlendMode(custom_, SDL_BLENDMODE_NONE);
+    draw_final(custom_, dst);
+    g_prof.lap(2);
+    hd_frame_ = true;
+    finish();
+    hd_frame_ = false;
 }

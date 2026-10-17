@@ -20,6 +20,7 @@ endif()
 add_library(hohcore STATIC
   src/compat/gfx.cpp
   src/compat/font.cpp
+  src/compat/hd_core.cpp
   src/compat/packfile.cpp
   src/compat/datafile.cpp
   src/data/hohdata.cpp)
@@ -52,7 +53,7 @@ if(HOH_BUILD_GAME)
 
   # Camada de plataforma SDL2 (video, entrada, timers, audio)
   add_library(hohplatform STATIC src/compat/platform_sdl.cpp src/compat/audio_sdl.cpp
-    src/compat/video_scaler.cpp)
+    src/compat/video_scaler.cpp src/compat/hd_render.cpp)
   target_link_libraries(hohplatform PUBLIC hohcore PkgConfig::VORBISFILE Threads::Threads)
   if(MINGW OR HOH_STATIC_VORBIS)
     # libogg/libvorbis estaticos: precisa das dependencias privadas (pkg-config --static)

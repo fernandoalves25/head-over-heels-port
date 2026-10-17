@@ -1,5 +1,6 @@
 // Video, teclado, controles e timers do Allegro 4.0 implementados sobre SDL2.
 #include "compat/allegro.h"
+#include "compat/hd_render.h"
 #include "compat/platform.h"
 #include "compat/video_scaler.h"
 
@@ -41,6 +42,9 @@ bool g_scaler_ready = false;
 constexpr int kFpsOff = 0, kFpsAuto = -1;
 int g_fps_mode = kFpsAuto;
 bool g_fps_cfg_set = false;
+// Pacote do renderizador HD (port.cfg "hd"; F8 alterna): "" = o primeiro encontrado, "off" = desligado.
+std::string g_hd_pack;
+bool g_hd_scanned = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
 bool g_quit = false;
@@ -64,6 +68,7 @@ void load_port_cfg() {
             if (std::sscanf(line, " %63[^= ] = %127s", key_, val) == 2) {
                 if (std::strcmp(key_, "scaler") == 0) scale_mode_from_name(val, &g_scale_mode);
                 if (std::strcmp(key_, "fps") == 0) { g_fps_mode = fps_mode_from_name(val); g_fps_cfg_set = true; }
+                if (std::strcmp(key_, "hd") == 0) g_hd_pack = val;
                 if (std::strcmp(key_, "smooth") == 0 && !g_fps_cfg_set) {  // port.cfg antigo (liga/desliga)
                     g_fps_mode = std::atoi(val) != 0 ? kFpsAuto : kFpsOff;
                     g_fps_cfg_set = true;
@@ -75,6 +80,7 @@ void load_port_cfg() {
     if (const char *env = std::getenv("HOH_SCALER")) scale_mode_from_name(env, &g_scale_mode);
     if (const char *env = std::getenv("HOH_SMOOTH")) { g_fps_mode = std::atoi(env) != 0 ? kFpsAuto : kFpsOff; g_fps_cfg_set = true; }
     if (const char *env = std::getenv("HOH_FPS")) { g_fps_mode = fps_mode_from_name(env); g_fps_cfg_set = true; }
+    if (const char *env = std::getenv("HOH_HD")) g_hd_pack = env;
 }
 
 void save_port_cfg() {
@@ -87,6 +93,10 @@ void save_port_cfg() {
         if (g_fps_mode == kFpsAuto) std::fprintf(f, "fps = auto\n");
         else if (g_fps_mode == kFpsOff) std::fprintf(f, "fps = off\n");
         else std::fprintf(f, "fps = %d\n", g_fps_mode);
+        if (!hd::packs().empty() || !g_hd_pack.empty()) {
+            std::fprintf(f, "# hd: pacote de sprites ampliados (pasta hd/<pacote>) | off   (F8 alterna)\n");
+            std::fprintf(f, "hd = %s\n", hd::current_pack() >= 0 ? hd::packs()[hd::current_pack()].c_str() : "off");
+        }
         std::fclose(f);
     }
 }
@@ -140,8 +150,12 @@ void update_window_title() {
     else std::snprintf(fps, sizeof fps, "%s%d/s%s", g_fps_mode == kFpsAuto ? "auto (" : "",
                        static_cast<int>(std::lround(static_cast<double>(g_pacer.refresh) / pacer_divisor())),
                        g_fps_mode == kFpsAuto ? ")" : "");
-    char t[160];
-    std::snprintf(t, sizeof t, "Head Over Heels   [F9 quadros: %s | F10 escala: %s | F11 tela cheia]", fps,
+    char hd_txt[96] = "";
+    if (!hd::packs().empty())
+        std::snprintf(hd_txt, sizeof hd_txt, "F8 HD: %s | ",
+                      hd::current_pack() >= 0 ? hd::packs()[hd::current_pack()].c_str() : "desligado");
+    char t[256];
+    std::snprintf(t, sizeof t, "Head Over Heels   [%sF9 quadros: %s | F10 escala: %s | F11 tela cheia]", hd_txt, fps,
                   scale_mode_name(g_scale_mode));
     SDL_SetWindowTitle(g_window, t);
 }
@@ -394,6 +408,7 @@ int script_key_code(const std::string &n) {
     for (auto &p : names)
         if (n == p.first) return p.second;
     if (n.size() == 1 && n[0] >= 'A' && n[0] <= 'Z') return KEY_A + (n[0] - 'A');
+    if (n == "F8") return KEY_F8;
     if (n == "F9") return KEY_F9;
     if (n == "F10") return KEY_F10;
     return std::atoi(n.c_str());
@@ -430,12 +445,12 @@ void script_tick() {
     if (!g_script_loaded) script_load();
     uint32_t t = SDL_GetTicks() - g_script_t0;
     for (ScriptKey &k : g_script_keys) {
-        if (!k.down_done && t >= k.at && (k.key == KEY_F9 || k.key == KEY_F10)) {
+        if (!k.down_done && t >= k.at && (k.key == KEY_F8 || k.key == KEY_F9 || k.key == KEY_F10)) {
             k.down_done = k.up_done = true;  // teclas do port: passam pelo tratamento de eventos
             SDL_Event e{};
             e.type = SDL_KEYDOWN;
-            e.key.keysym.sym = k.key == KEY_F9 ? SDLK_F9 : SDLK_F10;
-            e.key.keysym.scancode = k.key == KEY_F9 ? SDL_SCANCODE_F9 : SDL_SCANCODE_F10;
+            e.key.keysym.sym = k.key == KEY_F8 ? SDLK_F8 : k.key == KEY_F9 ? SDLK_F9 : SDLK_F10;
+            e.key.keysym.scancode = k.key == KEY_F8 ? SDL_SCANCODE_F8 : k.key == KEY_F9 ? SDL_SCANCODE_F9 : SDL_SCANCODE_F10;
             SDL_PushEvent(&e);
             continue;
         }
@@ -485,10 +500,30 @@ void present_bitmap(BITMAP *bmp) {
         for (ScriptShot &s : g_script_scaled_shots)
             if (!s.done && t >= s.at) { s.done = true; g_scaler.capture_next(s.path.c_str()); break; }
     }
+    if (hd::frame_ready(bmp)) {  // port: quadro do jogo com lista gravada e pacote HD ligado
+        const int k = hd::render_scale();
+        g_scaler.present_custom(bmp->w * k, bmp->h * k,
+                                [bmp](SDL_Renderer *r, SDL_Texture *t, int w, int h) { hd::render(r, t, bmp, w, h); });
+        hd::verify(bmp);
+        hd::frame_done();
+        return;
+    }
+    hd::frame_done();
     g_scaler.present(bmp, g_scale_mode);
 }
 
+// Pacote HD do port.cfg/HOH_HD: nome, "off", ou vazio (= o primeiro que existir).
+void hd_apply_cfg() {
+    const std::vector<std::string> &p = hd::packs();
+    int sel = p.empty() ? -1 : 0;
+    if (g_hd_pack == "off") sel = -1;
+    for (size_t i = 0; i < p.size(); i++)
+        if (p[i] == g_hd_pack) sel = static_cast<int>(i);
+    hd::select_pack(sel);
+}
+
 void destroy_display() {
+    hd::detach();
     g_scaler.shutdown();
     g_scaler_ready = false;
     if (g_renderer) SDL_DestroyRenderer(g_renderer);
@@ -539,6 +574,9 @@ void allegro_message(const char *fmt, ...) {
     std::fprintf(stderr, "%s\n", buf);
     if (!platform_is_handheld()) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Head Over Heels", buf, g_window);
 }
+
+void platform_capture_next(const char *path) { g_scaler.capture_next(path); }
+void platform_save_bitmap(BITMAP *bmp, const char *path) { save_bmp(bmp, path); }
 
 bool platform_set_clipboard_text(const char *text) {
     return text && SDL_SetClipboardText(text) == 0;
@@ -608,6 +646,15 @@ int set_gfx_mode(int card, int w, int h, int, int) {
         return -1;
     }
     if (handheld) SDL_ShowCursor(SDL_DISABLE);
+    if (!handheld) {  // renderizador HD: so no PC (pacotes em <pasta dos dados>/hd ou HOH_HD_DIR)
+        hd::attach(g_renderer);
+        if (!g_hd_scanned) {
+            g_hd_scanned = true;
+            const char *dir = std::getenv("HOH_HD_DIR");
+            hd::scan_packs(dir ? dir : "hd");
+            hd_apply_cfg();
+        }
+    }
     query_refresh_rate();
     update_window_title();
     screen = create_bitmap(w, h);
@@ -757,6 +804,17 @@ void platform_pump(void) {
                 }
                 if (e.key.keysym.sym == SDLK_F11) {
                     if (!e.key.repeat) platform_toggle_fullscreen();
+                    break;
+                }
+                if (e.key.keysym.sym == SDLK_F8) {  // port: pacote HD (desligado -> cada pacote)
+                    if (!e.key.repeat && !hd::packs().empty()) {
+                        int next = hd::current_pack() + 1;
+                        if (next >= static_cast<int>(hd::packs().size())) next = -1;
+                        hd::select_pack(next);
+                        g_hd_pack = next < 0 ? "off" : hd::packs()[next];
+                        save_port_cfg();
+                        update_window_title();
+                    }
                     break;
                 }
                 if (e.key.keysym.sym == SDLK_F9) {  // port: quadros interpolados
