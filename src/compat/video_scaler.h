@@ -30,6 +30,8 @@ public:
     void present(const BITMAP *frame, ScaleMode mode);
     // Mostra de novo o ultimo quadro, sem ampliar nem enviar a textura (com vsync: mais um retraco).
     void present_again();
+    // Tamanho do quadro que vem (modo responsivo): refaz as texturas se mudou.
+    void set_frame_size(int w, int h);
     // Quadro desenhado por fora (renderizador HD): draw(renderer, alvo, w, h) desenha num alvo de
     // w x h (a resolucao nativa do pacote), que depois e reduzido com filtro para a area 4:3 da janela.
     void present_custom(int w, int h, const std::function<void(SDL_Renderer *, SDL_Texture *, int, int)> &draw);

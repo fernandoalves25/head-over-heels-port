@@ -44,6 +44,8 @@ int g_fps_mode = kFpsAuto;
 bool g_fps_cfg_set = false;
 // Pacote do renderizador HD (port.cfg "hd"; F8 alterna): "" = o primeiro encontrado, "off" = desligado.
 std::string g_hd_pack;
+// Modo responsivo (port.cfg "responsive"; F7 alterna): a tela acompanha a proporcao da janela.
+bool g_responsive = true;
 bool g_hd_scanned = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
@@ -69,6 +71,7 @@ void load_port_cfg() {
                 if (std::strcmp(key_, "scaler") == 0) scale_mode_from_name(val, &g_scale_mode);
                 if (std::strcmp(key_, "fps") == 0) { g_fps_mode = fps_mode_from_name(val); g_fps_cfg_set = true; }
                 if (std::strcmp(key_, "hd") == 0) g_hd_pack = val;
+                if (std::strcmp(key_, "responsive") == 0) g_responsive = std::atoi(val) != 0;
                 if (std::strcmp(key_, "smooth") == 0 && !g_fps_cfg_set) {  // port.cfg antigo (liga/desliga)
                     g_fps_mode = std::atoi(val) != 0 ? kFpsAuto : kFpsOff;
                     g_fps_cfg_set = true;
@@ -81,6 +84,7 @@ void load_port_cfg() {
     if (const char *env = std::getenv("HOH_SMOOTH")) { g_fps_mode = std::atoi(env) != 0 ? kFpsAuto : kFpsOff; g_fps_cfg_set = true; }
     if (const char *env = std::getenv("HOH_FPS")) { g_fps_mode = fps_mode_from_name(env); g_fps_cfg_set = true; }
     if (const char *env = std::getenv("HOH_HD")) g_hd_pack = env;
+    if (const char *env = std::getenv("HOH_RESPONSIVE")) g_responsive = std::atoi(env) != 0;
 }
 
 void save_port_cfg() {
@@ -97,6 +101,8 @@ void save_port_cfg() {
             std::fprintf(f, "# hd: pacote de sprites ampliados (pasta hd/<pacote>) | off   (F8 alterna)\n");
             std::fprintf(f, "hd = %s\n", hd::current_pack() >= 0 ? hd::packs()[hd::current_pack()].c_str() : "off");
         }
+        std::fprintf(f, "# responsive: 1 = a tela acompanha a proporcao da janela, 0 = sempre 4:3   (F7 alterna)\n");
+        std::fprintf(f, "responsive = %d\n", g_responsive ? 1 : 0);
         std::fclose(f);
     }
 }
@@ -155,8 +161,8 @@ void update_window_title() {
         std::snprintf(hd_txt, sizeof hd_txt, "F8 HD: %s | ",
                       hd::current_pack() >= 0 ? hd::packs()[hd::current_pack()].c_str() : "desligado");
     char t[256];
-    std::snprintf(t, sizeof t, "Head Over Heels   [%sF9 quadros: %s | F10 escala: %s | F11 tela cheia]", hd_txt, fps,
-                  scale_mode_name(g_scale_mode));
+    std::snprintf(t, sizeof t, "Head Over Heels   [F7 tela: %s | %sF9 quadros: %s | F10 escala: %s | F11 tela cheia]",
+                  g_responsive ? "responsiva" : "4:3", hd_txt, fps, scale_mode_name(g_scale_mode));
     SDL_SetWindowTitle(g_window, t);
 }
 
@@ -500,6 +506,7 @@ void present_bitmap(BITMAP *bmp) {
         for (ScriptShot &s : g_script_scaled_shots)
             if (!s.done && t >= s.at) { s.done = true; g_scaler.capture_next(s.path.c_str()); break; }
     }
+    g_scaler.set_frame_size(bmp->w, bmp->h);  // modo responsivo: o quadro muda de tamanho com a janela
     hd::verify(bmp);  // HOH_HD_VERIFY: a lista refaz este quadro em 1x?
     if (hd::frame_ready(bmp)) {  // port: quadro com lista gravada e pacote HD ligado
         const int k = hd::render_scale();
@@ -697,6 +704,21 @@ void platform_toggle_fullscreen(void) {
 }
 
 bool platform_is_fullscreen(void) { return g_fullscreen; }
+void platform_forget_bitmap(BITMAP *bmp) {
+    if (g_shown == bmp) g_shown = screen;
+}
+
+void platform_canvas_size(int *w, int *h) {
+    *w = 640;
+    *h = 480;
+    if (!g_responsive || !g_renderer || platform_is_handheld()) return;
+    int ow = 0, oh = 0;
+    if (SDL_GetRendererOutputSize(g_renderer, &ow, &oh) != 0 || ow <= 0 || oh <= 0) return;
+    // lado menor fixo; largura/altura par (o miolo fica centrado em pixels inteiros); ate 8:3 / 3:4
+    if (ow * 3 >= oh * 4) *w = std::clamp(2 * static_cast<int>(std::lround(240.0 * ow / oh)), 640, 1280);
+    else *h = std::clamp(2 * static_cast<int>(std::lround(320.0 * oh / ow)), 480, 854);
+}
+
 bool platform_smooth_enabled(void) { return g_fps_mode != kFpsOff; }
 int platform_fps_mode(void) { return g_fps_mode; }
 int platform_fps_target(void) {
@@ -804,6 +826,14 @@ void platform_pump(void) {
                 }
                 if (e.key.keysym.sym == SDLK_F11) {
                     if (!e.key.repeat) platform_toggle_fullscreen();
+                    break;
+                }
+                if (e.key.keysym.sym == SDLK_F7 && !platform_is_handheld()) {  // port: modo responsivo
+                    if (!e.key.repeat) {
+                        g_responsive = !g_responsive;
+                        save_port_cfg();
+                        update_window_title();
+                    }
                     break;
                 }
                 if (e.key.keysym.sym == SDLK_F8) {  // port: pacote HD (desligado -> cada pacote)

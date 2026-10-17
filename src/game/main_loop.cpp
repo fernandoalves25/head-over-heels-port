@@ -13,6 +13,7 @@
 #include "game/engine_types.h"
 #include "game/gameplay.h"
 #include "game/room_render.h"
+#include "game/responsive.h"
 #include "game/screens.h"
 #include "game/sound.h"
 #include "game/water.h"
@@ -79,6 +80,7 @@ void triple_buffer_init() {
 // 0x0040e6b0 free_game_resources. Os blocos/moveis/nomeados/mundos do original eram objetos com
 // destrutor virtual; no port pertencem ao GameData (g_data), destruido aqui.
 void free_game_resources() {
+    free_canvas();  // port: modo responsivo
     for (int i = 0; i < g_bitmap_registry_count; i++) destroy_bitmap(g_bitmap_registry[i]);
     g_bitmap_registry_count = 0;
     engine_free_game_objects();  // blocos/moveis/nomeados/mundos (destrutores virtuais no original)
@@ -204,6 +206,7 @@ void game_update() {
 
 // 0x0040e210 game_render
 void game_render() {
+    canvas_update();  // port: modo responsivo (tamanho da janela)
     if (!g_triple_buffer) g_render_target = screen;
     hd::frame_begin(g_backbuffer, g_game_state);  // port (HD): quadro de qualquer estado vai para a lista
     BITMAP *out = nullptr;  // bitmap copiado para o destino no fim (iVar3)
@@ -216,7 +219,8 @@ void game_render() {
             break;
         case 1:
             if (!g_transition_active) {
-                render_game_frame(g_backbuffer);
+                if (canvas_active()) render_game_frame_wide();  // port: sala e HUD na tela larga
+                else render_game_frame(g_backbuffer);
                 if (g_show_fps) {
                     int id = active_room()->id;
                     textprintf(g_backbuffer, font, 0, 0, makecol(0xff, 0xff, 0xff), s___02i__02i__0043338c, id % 0x28, id / 0x28);
@@ -270,6 +274,7 @@ void game_render() {
         g_thunder_flash = g_thunder_flash + 1;
         if (g_thunder_flash == 2 || g_thunder_flash == 4) {
             clear_to_color(g_render_target, makecol(0xff, 0xff, 0xff));
+            canvas_flash();  // port: a tela larga inteira pisca
             if (g_thunder_flash == 4) g_thunder_flash = 0;
         }
     }
@@ -283,7 +288,7 @@ void game_render() {
     if (g_triple_buffer) {
         while (poll_scroll() != 0) {
         }
-        request_video_bitmap(g_render_target);
+        present_frame(g_render_target);  // port: com a tela larga em volta, se ativa
         if (g_video_page_index == 0) {
             g_video_page_index = 1;
             g_render_target = g_video_page1;
@@ -295,7 +300,7 @@ void game_render() {
             g_render_target = g_video_page0;
         }
     } else {
-        platform_present();  // port: no Allegro o blit no `screen` ja aparecia (memoria de video)
+        present_frame(g_render_target);  // port: no Allegro o blit no `screen` ja aparecia (memoria de video)
     }
 }
 
@@ -350,6 +355,7 @@ bool smooth_render_frame() {
     if (!g_smooth_prev.valid || !smooth_applicable()) return false;
     Room *r = g_char_rooms[g_active_room_slot];
     if (r != g_smooth_prev.room) return false;
+    canvas_update();  // port: modo responsivo (tamanho da janela)
     platform_smooth_frame_begin();
     const uint64_t now = SDL_GetPerformanceCounter();
     const double freq = static_cast<double>(SDL_GetPerformanceFrequency());
@@ -381,7 +387,8 @@ bool smooth_render_frame() {
     }
 
     const uint32_t rng = msvc_rand_state();
-    render_game_frame(g_backbuffer);
+    if (canvas_active()) render_game_frame_wide();  // port: modo responsivo
+    else render_game_frame(g_backbuffer);
     msvc_rand_state() = rng;
     if (g_show_fps) {  // como em game_render
         int id = r->id;
@@ -400,8 +407,7 @@ bool smooth_render_frame() {
     if (!g_triple_buffer) g_render_target = screen;
     blit(g_backbuffer, g_render_target, 0, 0, 0, 0, g_screen_w, g_screen_h);
     if (g_show_fps) draw_fps_counter(g_render_target);
-    if (g_triple_buffer) request_video_bitmap(g_render_target);
-    else platform_present();
+    present_frame(g_render_target);
     platform_smooth_frame_end();
     return true;
 }

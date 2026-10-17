@@ -179,13 +179,34 @@ janela. **F8** alterna desligado → cada pacote; fica salvo em `port.cfg` (`hd 
   origem quando ela é usada. `HOH_TEST_GAMEOVER_MS=t` leva o jogo à tela de resultado no instante t
   (para os testes).
 
+## Modo responsivo (PC)
+
+A imagem acompanha a proporção da janela, em tempo real: o lado menor fica fixo (480 linhas de
+altura em tela larga, 640 colunas de largura em pé) e o outro cresce com a janela — 16:9 dá
+854×480, 21:9 dá 1120×480, em pé até 640×854; em 4:3 é o 640×480 de sempre. **F7** alterna
+responsivo/4:3 (`port.cfg`: `responsive = 1|0`, ou `HOH_RESPONSIVE`). No R36S fica desligado.
+
+O jogo continua desenhando o quadro de 640×480 (o "miolo") como no original, e a lógica não muda
+(`src/game/responsive.cpp`):
+- No jogo, a sala e o HUD são desenhados direto na tela larga: a sala no centro, e a câmera usa a
+  largura extra (`room_init_scroll` soma a margem às extensões de vista), então salas que rolavam
+  em 4:3 aparecem inteiras. A moldura do HUD contorna a esquina e desce até as bordas (faixas da
+  ponta dos painéis). O miolo é copiado de volta para `g_backbuffer`, que transições e pausa usam;
+  essas telas escurecem a tela larga do mesmo jeito. Em pé, sala e HUD ficam juntos na base.
+- Abertura, menus, mapa e resultado ficam centrados, com um fundo desfocado e escurecido do próprio
+  quadro em volta.
+- A sala é desenhada uma vez por quadro, como antes (o desenho usa `rand()` nas salas escuras).
+- Funciona com o renderizador HD (a tela larga também tem lista). Teste:
+  `scripts/responsive-test.sh` roda 16:9, 21:9, em pé e 4:3 e confere o HD contra o 1x em cada
+  quadro (0 diferenças).
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
 - Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: quadros por segundo (auto, 120, 60, 30);
-  F8: pacote de gráficos HD.
+  F8: pacote de gráficos HD; F7: tela responsiva / 4:3.
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

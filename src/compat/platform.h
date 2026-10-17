@@ -26,6 +26,11 @@ void platform_capture_next(const char *path);
 void platform_save_bitmap(BITMAP *bmp, const char *path);
 // Quadros interpolados entre os ticks de logica (F9: auto -> taxa do monitor -> metade -> 30).
 bool platform_smooth_enabled(void);
+// Modo responsivo: tamanho do quadro logico para a janela atual (lado menor fixo: 480 de altura em
+// tela larga, 640 de largura em pe). 640x480 com o modo desligado (F7) ou no console portatil.
+void platform_canvas_size(int *w, int *h);
+// O bitmap vai ser destruido: deixa de ser o "ultimo mostrado" (que a janela redesenha).
+void platform_forget_bitmap(BITMAP *bmp);
 // Em volta de cada quadro interpolado: o fim segura o ritmo (a taxa do monitor dividida por um
 // inteiro: 120 Hz -> 120 ou 60 quadros novos por segundo), repetindo o quadro no vsync ou, se o
 // vsync nao segurar, esperando pelo relogio; no modo auto, cai para a metade se o PC nao acompanhar.

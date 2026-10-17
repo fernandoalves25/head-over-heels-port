@@ -8,6 +8,9 @@ Como jogar
 
 Teclas
 - Setas, ENTER, ESC como no jogo original (teclas redefiniveis em CHANGE CONTROLS).
+- F7: tela responsiva (padrao) / 4:3. Responsiva, a imagem acompanha a proporcao da janela
+  ou do monitor (16:9, 21:9, em pe...): no jogo a sala fica no centro e mostra mais dos lados,
+  e a moldura do HUD vai ate as bordas; menus e mapa ficam no centro com o fundo estendido.
 - F8: graficos HD (fica salvo em port.cfg): desligado -> cada pacote encontrado em
   <pasta do jogo>\hd\<pacote>\ (ex.: anime, animevideo, x4plus). Os pacotes trocam os
   sprites e as fontes por versoes ampliadas 4x em todas as telas (abertura, titulo, menus,
@@ -26,7 +29,8 @@ Teclas
     30        so os 30 quadros do jogo original
   A logica continua a 30 passos por segundo como no original; os quadros a mais mostram
   o movimento interpolado entre um passo e outro, sem mudar a jogabilidade.
-- F11 ou Alt+Enter: alterna janela / tela cheia (a imagem ocupa a tela toda em 4:3).
+- F11 ou Alt+Enter: alterna janela / tela cheia (com a tela responsiva, a imagem ocupa o
+  monitor inteiro; em 4:3, com faixas nas laterais).
 - Controles USB/XInput funcionam como joystick (ative em CHANGE CONTROLS).
 
 Linha de comando

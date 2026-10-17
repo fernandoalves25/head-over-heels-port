@@ -279,3 +279,8 @@ void VideoScaler::present_custom(int w, int h, const std::function<void(SDL_Rend
     finish();
     hd_frame_ = false;
 }
+
+void VideoScaler::set_frame_size(int w, int h) {
+    if (!r_ || w <= 0 || h <= 0 || (w == w_ && h == h_)) return;
+    init(r_, w, h);
+}

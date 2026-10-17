@@ -17,6 +17,7 @@
 #include "game/engine_data.h"
 #include "game/globals.h"
 #include "game/physics.h"
+#include "game/responsive.h"
 #include "game/room_render.h"
 #include "game/sound.h"
 
@@ -223,8 +224,9 @@ bool room_read_bool() {
 
 // 0x00403c00 room_init_scroll
 void room_init_scroll(Room *room) {
-    g_view_ext_x = (g_screen_w - room->base_origin_x) + -4;
-    g_view_ext_z = room->base_origin_x + -4;
+    // port (modo responsivo): na tela larga a sala fica g_canvas_geom.ox mais longe de cada borda
+    g_view_ext_x = (g_screen_w - room->base_origin_x) + -4 + g_canvas_geom.ox;
+    g_view_ext_z = room->base_origin_x + -4 + g_canvas_geom.ox;
     if (g_view_ext_x <= room->width_px) room->scroll_x = true;
     if (g_view_ext_z <= room->depth_px) room->scroll_z = true;
 }
