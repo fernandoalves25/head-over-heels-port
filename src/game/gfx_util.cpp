@@ -8,6 +8,7 @@
 #include "game/menu.h"
 #include "game/sound.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 
@@ -22,16 +23,60 @@ BITMAP *block_frame(int block, int dir, int frame) {
     return g_data->blocks[block].dirs[dir].frames[frame].a;
 }
 
+// Parametros de tint_bitmap ja em double, como no comeco de tint_bitmap/tint_bitmap_bgr.
+struct TintParams {
+    double hue_d, sat_d, lum_d, boost;
+    int boost_pct;
+};
+TintParams tint_params(int hue, int sat, int lum, int boost_pct) {
+    TintParams p;
+    p.hue_d = (double)hue * kInv255;
+    p.boost = 0.0;
+    p.sat_d = (double)sat * kInv255;
+    p.lum_d = (double)lum * kInv255;
+    p.boost_pct = boost_pct;
+    if (0 < boost_pct) p.boost = (double)boost_pct * 0.01 + 1.0;
+    return p;
+}
+
+// Cor de saida de um luma (0..255): o meio do laco de tint_bitmap.
+inline void tint_luma(uint32_t luma, const TintParams &p, int *r, int *g, int *b) {
+    const double l = (double)luma * p.lum_d * kInv255;
+    hsl_to_rgb(p.hue_d, l, p.sat_d, r, g, b);
+    if (0 < p.boost_pct) {
+        *r = (int)((double)*r * p.boost);  // _ftol: trunca
+        *g = (int)((double)*g * p.boost);
+        *b = (int)((double)*b * p.boost);
+        if (0xff < *r) *r = 0xff;
+        if (0xff < *g) *g = 0xff;
+        if (0xff < *b) *b = 0xff;
+    }
+}
+
+// Um pixel nao-mascara de tint_bitmap (kBgr troca R/B na saida). Port: fora do laco para o
+// renderizador HD usar exatamente a mesma conta.
+template <bool kBgr>
+inline uint16_t tint_pixel(uint16_t c, const TintParams &p) {
+    int b = (c & 5) << 3;  // original: bug (and eax,5 em 0x40c9fd); deveria ser (c & 0x1f) << 3
+    int g = (c >> 3) & 0xfc;
+    int r = (c >> 8) & 0xf8;
+    const uint32_t luma = ((uint32_t)g_luma_weight_b * (uint32_t)b +
+                           (uint32_t)g_luma_weight_g * (uint32_t)g +
+                           (uint32_t)g_luma_weight_r * (uint32_t)r) >> 16;
+    tint_luma(luma, p, &r, &g, &b);
+    const int hi = kBgr ? b : r;  // canal gravado nos bits altos
+    const int lo = kBgr ? r : b;  // canal gravado nos bits baixos
+    const uint32_t px = ((((uint32_t)hi & 0xfffffff8u) << 5 | ((uint32_t)g & 0xfffffffcu)) << 3) |
+                        (uint32_t)(lo >> 3);
+    return (uint16_t)px;
+}
+
 // Corpo comum de tint_bitmap (0x40c8c0) e tint_bitmap_bgr (0x40c620). O original tem o laco
 // duplicado nas duas funcoes; as copias so diferem na montagem do pixel de saida (kBgr troca R/B).
 template <bool kBgr>
 void tint_region(BITMAP *src, BITMAP *dst, int hue, int sat, int lum, int boost_pct, int src_x,
                  int src_y, int dst_x, int dst_y, int w, int h, int copy_mask) {
-    const double hue_d = (double)hue * kInv255;
-    double boost = 0.0;
-    const double sat_d = (double)sat * kInv255;
-    const double lum_d = (double)lum * kInv255;
-    if (0 < boost_pct) boost = (double)boost_pct * 0.01 + 1.0;
+    const TintParams p = tint_params(hue, sat, lum, boost_pct);
     // original: tambem guarda o maior L calculado numa local (local_30) que nunca e lida.
     if (src_x == -1) {  // bitmap inteiro; original: dst_x NAO e zerado
         src_y = 0;
@@ -49,28 +94,48 @@ void tint_region(BITMAP *src, BITMAP *dst, int hue, int sat, int lum, int boost_
                 if ((uint8_t)copy_mask != 0) dst->line[dst_y + j][dst_x + i] = c;  // so o byte baixo
                 continue;
             }
-            int b = (c & 5) << 3;  // original: bug (and eax,5 em 0x40c9fd); deveria ser (c & 0x1f) << 3
-            int g = (c >> 3) & 0xfc;
-            int r = (c >> 8) & 0xf8;
-            const uint32_t luma = ((uint32_t)g_luma_weight_b * (uint32_t)b +
-                                   (uint32_t)g_luma_weight_g * (uint32_t)g +
-                                   (uint32_t)g_luma_weight_r * (uint32_t)r) >> 16;
-            const double l = (double)luma * lum_d * kInv255;
-            hsl_to_rgb(hue_d, l, sat_d, &r, &g, &b);
-            if (0 < boost_pct) {
-                r = (int)((double)r * boost);  // _ftol: trunca
-                g = (int)((double)g * boost);
-                b = (int)((double)b * boost);
-                if (0xff < r) r = 0xff;
-                if (0xff < g) g = 0xff;
-                if (0xff < b) b = 0xff;
-            }
-            const int hi = kBgr ? b : r;  // canal gravado nos bits altos
-            const int lo = kBgr ? r : b;  // canal gravado nos bits baixos
-            const uint32_t px = ((((uint32_t)hi & 0xfffffff8u) << 5 | ((uint32_t)g & 0xfffffffcu)) << 3) |
-                                (uint32_t)(lo >> 3);
-            dst->line[dst_y + j][dst_x + i] = (uint16_t)px;
+            dst->line[dst_y + j][dst_x + i] = tint_pixel<kBgr>(c, p);
         }
+    }
+    // port (HD): a regiao de dst agora e a de src tingida
+    hd::Xform x;
+    x.kind = hd::XF_TINT;
+    x.bgr = kBgr;
+    x.a = (int16_t)hue;
+    x.b = (int16_t)sat;
+    x.c = (int16_t)lum;
+    x.d = (int16_t)boost_pct;
+    hd::tinted(src, dst, x, src_x, src_y, dst_x, dst_y, w, h, (uint8_t)copy_mask != 0);
+}
+
+// port (HD): o tingimento para o renderizador. 1x: o mesmo pixel de tint_bitmap.
+uint16_t hd_tint_px(uint16_t c, const hd::Xform &x) {
+    const TintParams p = tint_params(x.a, x.b, x.c, x.d);
+    return x.bgr ? tint_pixel<true>(c, p) : tint_pixel<false>(c, p);
+}
+
+// Texels do pacote: o luma sai do RGB8 (o azul com o mesmo bug do 1x) e a cor de uma tabela por
+// luma com as contas de tint_bitmap, sem arredondar para 16 bits.
+void hd_tint_rgba(uint8_t *px, size_t n, const hd::Xform &x) {
+    const TintParams p = tint_params(x.a, x.b, x.c, x.d);
+    uint8_t lut[256][3];
+    for (int l = 0; l < 256; l++) {
+        int r = 0, g = 0, b = 0;
+        tint_luma((uint32_t)l, p, &r, &g, &b);
+        if (x.bgr) std::swap(r, b);  // como a variante BGR grava (R e B trocados)
+        lut[l][0] = (uint8_t)std::clamp(r, 0, 255);
+        lut[l][1] = (uint8_t)std::clamp(g, 0, 255);
+        lut[l][2] = (uint8_t)std::clamp(b, 0, 255);
+    }
+    for (size_t i = 0; i < n; i++) {
+        uint8_t *t = px + i * 4;
+        if (t[3] == 0) continue;
+        const uint32_t b = (uint32_t)(((t[2] >> 3) & 5) << 3);
+        const uint32_t luma = std::min<uint32_t>(255, ((uint32_t)g_luma_weight_b * b + (uint32_t)g_luma_weight_g * t[1] +
+                                                       (uint32_t)g_luma_weight_r * t[0]) >> 16);
+        t[0] = lut[luma][0];
+        t[1] = lut[luma][1];
+        t[2] = lut[luma][2];
     }
 }
 
@@ -207,6 +272,9 @@ void make_silhouette(BITMAP *src, BITMAP *dst) {
                 dst->line[y][x] = 0;
         }
     }
+    hd::Xform sil;  // port (HD): dst = silhueta de src
+    sil.kind = hd::XF_SILHOUETTE;
+    hd::tinted(src, dst, sil, 0, 0, 0, 0, w, h, true);
 }
 
 // 0x0040e7f0 create_grayscale_bitmap
@@ -254,6 +322,7 @@ void build_tinted_fonts() {
 // 0x0040e9c0 init_ui_graphics
 void init_ui_graphics() {
     g_mask_color = makecol(0xff, 0, 0xff);
+    hd::set_tint_functions(hd_tint_px, hd_tint_rgba);  // port (HD)
 
     // Icones do HUD e versoes cinza.
     g_icon_head = block_frame(0, 1, 1);  // g_blocks[0] + 0x214
@@ -276,6 +345,9 @@ void init_ui_graphics() {
     g_hud_old = create_bitmap(0x280, 0xa0);
     register_bitmap(g_hud_old);
     g_hud_new = create_bitmap(0x280, 0xa0);
+    // port (HD): bitmaps de trabalho com lista propria (g_hud_old fica em 1x: os 160 circulos por
+    // quadro da transicao do HUD nao cabem numa lista)
+    hd::track(g_hud_new);
     register_bitmap(g_hud_new);
 
     // Procura, a partir de g_images[2], a primeira imagem com w == 16 ou h == 17; `base` fica no
@@ -314,13 +386,17 @@ void init_ui_graphics() {
     g_font_medium = create_bitmap(g_font_w18->w, 0x12);
     clear_to_color(g_font_medium, g_mask_color);  // original: vtable+0x9c
     stretch_sprite(g_font_medium, g_font_w18, 0, 0, g_font_w18->w, 0x12);
+    hd::tag_stretch_copy(g_font_medium, g_font_w18);  // port (HD): a fonte do pacote, achatada
     register_bitmap(g_font_medium);
     g_font_tinted = create_bitmap(g_font_medium->w, g_font_medium->h);
+    hd::track(g_font_tinted);
     register_bitmap(g_font_tinted);
 
     // Logo HEAD OVER HEELS (+ Head e Heels) e sua silhueta.
     g_bmp_logo = create_bitmap(0x112, 0x5e);
     g_bmp_logo_shadow = create_bitmap(0x112, 0x5e);
+    hd::track(g_bmp_logo);
+    hd::track(g_bmp_logo_shadow);
     clear_to_color(g_bmp_logo, g_mask_color);
     clear_to_color(g_bmp_logo_shadow, g_mask_color);
     tint_bitmap(g_font_w18, g_font_title, 0, 200, 0xd7, 0, -1, 0, 0, 0, 0, 0, 1);
@@ -337,16 +413,22 @@ void init_ui_graphics() {
     // Bitmaps de trabalho: painel do menu e linha de texto.
     g_bmp_panel = create_bitmap(0x17c, 0xfa);
     g_bmp_panel_shadow = create_bitmap(0x17c, 0xfa);
+    hd::track(g_bmp_panel);
+    hd::track(g_bmp_panel_shadow);
     register_bitmap(g_bmp_panel);
     register_bitmap(g_bmp_panel_shadow);
     g_bmp_text_line = create_bitmap(0x2d0, g_font_w18->h);
     g_bmp_text_line_shadow = create_bitmap(0x2d0, g_font_w18->h);
+    hd::track(g_bmp_text_line);
+    hd::track(g_bmp_text_line_shadow);
     register_bitmap(g_bmp_text_line);
     register_bitmap(g_bmp_text_line_shadow);
 
     // COPYRIGHT 2003 RETROSPEC, com cada letra de RETROSPEC (x = 270..414) num matiz (0, 26, 52...).
     g_bmp_copyright = create_bitmap(0x1b0, g_font_medium->h);
     g_bmp_copyright_shadow = create_bitmap(0x1b0, g_font_medium->h);
+    hd::track(g_bmp_copyright);
+    hd::track(g_bmp_copyright_shadow);
     clear_to_color(g_bmp_copyright, g_mask_color);
     draw_text_w18(g_bmp_copyright, g_font_medium, s_COPYRIGHT_2003_RETROSPEC_004333ac, 0, 0);
     {
@@ -370,6 +452,8 @@ void init_ui_graphics() {
         const int tw = (int)std::strlen(g_ticker_texts[i]) * 0x12;
         g_bmp_ticker[i] = create_bitmap(tw, g_font_medium->h);
         g_bmp_ticker_shadow[i] = create_bitmap(tw, g_font_medium->h);
+        hd::track(g_bmp_ticker[i]);
+        hd::track(g_bmp_ticker_shadow[i]);
         clear_to_color(g_bmp_ticker[i], g_mask_color);  // original: vtable+0x9c
         draw_text_w18(g_bmp_ticker[i], g_font_medium, g_ticker_texts[i], 0, 0);
         make_silhouette(g_bmp_ticker[i], g_bmp_ticker_shadow[i]);
@@ -388,6 +472,7 @@ void init_ui_graphics() {
     register_bitmap(g_icon_crown_gray);
 
     g_popup_bitmap = create_bitmap(0x24, g_font_w18->h);
+    hd::track(g_popup_bitmap);
     register_bitmap(g_popup_bitmap);
 
     scan_save_slots();

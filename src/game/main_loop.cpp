@@ -1,5 +1,6 @@
 #include "game/main_loop.h"
 
+#include "compat/hd_render.h"
 #include "compat/platform.h"
 #include "game/data_bridge.h"
 #include "game/gfx_util.h"
@@ -18,6 +19,7 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -169,6 +171,17 @@ int sound_update_ambient() {
 // handlers dos estados, que sao funcoes proprias na tabela de saltos 0x40c44c).
 void game_update() {
     if (g_port_notice_ticks > 0) g_port_notice_ticks = g_port_notice_ticks - 1;  // port
+    // port (teste): HOH_TEST_GAMEOVER_MS=t leva o jogo a tela de resultado (estado 4) no instante t
+    static const uint32_t gameover_at = [] {
+        const char *e = std::getenv("HOH_TEST_GAMEOVER_MS");
+        return e ? static_cast<uint32_t>(std::atol(e)) : 0u;
+    }();
+    static bool gameover_done = false;
+    if (gameover_at && !gameover_done && g_game_state == 1 && !g_transition_active && SDL_GetTicks() >= gameover_at) {
+        gameover_done = true;
+        gameover_screen_start();
+        return;
+    }
     sound_update_ambient();
     if (g_joystick_enabled) poll_joystick();
     input_read_controls();
@@ -192,6 +205,7 @@ void game_update() {
 // 0x0040e210 game_render
 void game_render() {
     if (!g_triple_buffer) g_render_target = screen;
+    hd::frame_begin(g_backbuffer, g_game_state);  // port (HD): quadro de qualquer estado vai para a lista
     BITMAP *out = nullptr;  // bitmap copiado para o destino no fim (iVar3)
     switch (g_game_state) {
         case 0:
@@ -450,6 +464,8 @@ int game_main(int argc, char **argv) {
     if (num_joysticks == 0) g_joystick_enabled = 0;
     g_backbuffer = create_bitmap(g_screen_w, g_screen_h);
     g_buffer2 = create_bitmap(g_screen_w, g_screen_h);
+    hd::track(g_backbuffer);  // port (HD): os quadros (e o guardado em g_buffer2) tem lista propria
+    hd::track(g_buffer2);
     clear_to_color(g_buffer2, 0);
     clear_to_color(screen, makecol(0, 0, 0));
     g_shadow_buffer = create_bitmap(g_render_target->w, g_render_target->h);
@@ -487,20 +503,21 @@ int game_main(int argc, char **argv) {
     const double pf = static_cast<double>(SDL_GetPerformanceFrequency());
     uint64_t prof_t0 = SDL_GetPerformanceCounter();
     int prof_ticks = 0, prof_real = 0, prof_extra = 0, prof_idle = 0;
-    double prof_upd = 0, prof_rend = 0, prof_xtra = 0;
+    double prof_upd = 0, prof_rend = 0, prof_xtra = 0, prof_worst = 0;  // pior: quadro mais longo do segundo
     for (;;) {
         if (prof_path) {
             uint64_t now = SDL_GetPerformanceCounter();
             if (now - prof_t0 >= SDL_GetPerformanceFrequency()) {
                 if (FILE *f = std::fopen(prof_path, "a")) {
-                    std::fprintf(f, "estado %d: ticks %d  quadros reais %d (%.1f ms)  interpolados %d (%.1f ms)  update %.1f ms  ociosos %d" "\n",
+                    std::fprintf(f, "estado %d: ticks %d  quadros reais %d (%.1f ms)  interpolados %d (%.1f ms)  update %.1f ms  ociosos %d  pior %.1f ms" "\n",
                                  g_game_state, prof_ticks, prof_real, prof_real ? prof_rend / prof_real : 0.0, prof_extra,
-                                 prof_extra ? prof_xtra / prof_extra : 0.0, prof_ticks ? prof_upd / prof_ticks : 0.0, prof_idle);
+                                 prof_extra ? prof_xtra / prof_extra : 0.0, prof_ticks ? prof_upd / prof_ticks : 0.0, prof_idle,
+                                 prof_worst);
                     std::fclose(f);
                 }
                 prof_t0 = now;
                 prof_ticks = prof_real = prof_extra = prof_idle = 0;
-                prof_upd = prof_rend = prof_xtra = 0;
+                prof_upd = prof_rend = prof_xtra = prof_worst = 0;
             }
         }
         platform_pump();  // port: o Allegro tratava as mensagens do SO numa thread propria
@@ -535,6 +552,7 @@ int game_main(int argc, char **argv) {
                 prof_rend += (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf;
                 prof_real++;
             }
+            prof_worst = std::max(prof_worst, (SDL_GetPerformanceCounter() - pr) * 1000.0 / pf);
             redraw = 0;
             g_redraw = 0;
         } else if (redraw != 0) {
@@ -546,6 +564,7 @@ int game_main(int argc, char **argv) {
             if (smooth_render_frame()) {
                 prof_xtra += (SDL_GetPerformanceCounter() - px) * 1000.0 / pf;
                 prof_extra++;
+                prof_worst = std::max(prof_worst, (SDL_GetPerformanceCounter() - px) * 1000.0 / pf);
             } else {
                 prof_idle++;
                 SDL_Delay(1);  // port: o original girava a CPU a 100% esperando o timer

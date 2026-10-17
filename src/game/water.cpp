@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "compat/hd_render.h"
 #include "game/globals.h"
 
 namespace hoh {
@@ -65,6 +66,7 @@ void water_render_bgr(BITMAP *dst, int16_t *water) {
     // original: hline(dst, 0, 0, 0x27f, c) e hline(dst, 0, 0x1df, 0x27f, c) (vtable +0x2c)
     rectfill(dst, 0, 0, 0x27f, 0, c);
     rectfill(dst, 0, 0x1df, 0x27f, 0x1df, c);
+    hd::wrote(dst, 0, 0, dst->w, dst->h, hd::LINEAR);  // port (HD): o quadro vira uma copia 1x (com filtro)
 }
 
 // 0x00402a50 water_render
@@ -94,6 +96,7 @@ void water_render(BITMAP *dst, int16_t *water) {
     // original: hline(dst, 0, 0, 0x27f, c) e hline(dst, 0, 0x1df, 0x27f, c) (vtable +0x2c)
     rectfill(dst, 0, 0, 0x27f, 0, c);
     rectfill(dst, 0, 0x1df, 0x27f, 0x1df, c);
+    hd::wrote(dst, 0, 0, dst->w, dst->h, hd::LINEAR);  // port (HD): o quadro vira uma copia 1x (com filtro)
 }
 
 // 0x00402b10 water_random_drop
@@ -189,10 +192,25 @@ void start_screen_transition(int type) {
     g_transition_type = (type != -1) ? type : 0;
 }
 
+// port (HD): copia de dst antes da transicao (ver transition_column_wipe).
+static BITMAP *wipe_source(BITMAP *dst) {
+    static BITMAP *copy = nullptr;
+    if (!copy || copy->w != dst->w || copy->h != dst->h) {
+        destroy_bitmap(copy);
+        copy = create_bitmap(dst->w, dst->h);
+    }
+    blit(dst, copy, 0, 0, 0, 0, dst->w, dst->h);
+    return copy;
+}
+
 // 0x0040d1f0 transition_column_wipe
 // 20 colunas de 32 px: as (step-31) primeiras vem inteiras de src; as seguintes deslizam src
 // empurrando dst, com larguras 31, 30, ... (ou step, step-1, ...). step = 52 = tela toda src.
 void transition_column_wipe(BITMAP *dst, int step, bool from_left, BITMAP *src) {
+    // port (HD): cada copia de dst para dst so le a propria coluna, que este passo ainda nao mexeu;
+    // com a lista HD gravando, elas leem de uma copia de dst (o mesmo resultado) para a lista nao
+    // encadear uma versao do quadro por coluna.
+    BITMAP *from = (from_left && hd::recording(dst)) ? wipe_source(dst) : dst;
     int slide = step;        // largura de src na coluna atual
     int full = step - 0x1f;  // colunas inteiras de src
     if (full < 1) {
@@ -217,7 +235,7 @@ void transition_column_wipe(BITMAP *dst, int step, bool from_left, BITMAP *src) 
                 dx = xr - slide;
                 sx = xr - 0x20;
             } else {
-                blit(dst, dst, x, 0, x + slide, 0, keep, 0x1e0);
+                blit(from, dst, x, 0, x + slide, 0, keep, 0x1e0);
                 sx = (col + 1 + full) * 0x20 - slide;
                 dx = x;
             }

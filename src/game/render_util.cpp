@@ -11,7 +11,7 @@ namespace hoh {
 // 0x004158a0 draw_sprite_lit: draw_sprite 16 bpp com recorte (so contra o tamanho do destino),
 // pulando magenta e multiplicando o RGB565 por light/256 (em 32 avos: light >> 3).
 void draw_sprite_lit(BITMAP *dst, BITMAP *spr, int x, int y, int light) {
-    if (dst->hd_list && hd::touch(dst))  // port: renderizador HD
+    if (hd::touch(dst))  // port: renderizador HD
         hd::op_sprite(dst, spr, 0, 0, spr->w, spr->h, x, y, hd::MASKED, light >> 3);
     const uint32_t mask = static_cast<uint32_t>(makecol(0xff, 0, 0xff));
     const int y_orig = y;

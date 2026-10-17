@@ -500,15 +500,13 @@ void present_bitmap(BITMAP *bmp) {
         for (ScriptShot &s : g_script_scaled_shots)
             if (!s.done && t >= s.at) { s.done = true; g_scaler.capture_next(s.path.c_str()); break; }
     }
-    if (hd::frame_ready(bmp)) {  // port: quadro do jogo com lista gravada e pacote HD ligado
+    hd::verify(bmp);  // HOH_HD_VERIFY: a lista refaz este quadro em 1x?
+    if (hd::frame_ready(bmp)) {  // port: quadro com lista gravada e pacote HD ligado
         const int k = hd::render_scale();
         g_scaler.present_custom(bmp->w * k, bmp->h * k,
                                 [bmp](SDL_Renderer *r, SDL_Texture *t, int w, int h) { hd::render(r, t, bmp, w, h); });
-        hd::verify(bmp);
-        hd::frame_done();
         return;
     }
-    hd::frame_done();
     g_scaler.present(bmp, g_scale_mode);
 }
 
@@ -653,6 +651,8 @@ int set_gfx_mode(int card, int w, int h, int, int) {
             const char *dir = std::getenv("HOH_HD_DIR");
             hd::scan_packs(dir ? dir : "hd");
             hd_apply_cfg();
+            // grava as listas so com pacote para usar (ou nos testes): sem isso o jogo nao paga nada
+            hd::set_enabled(!hd::packs().empty() || std::getenv("HOH_HD_VERIFY") || std::getenv("HOH_HD_ROOMTOUR"));
         }
     }
     query_refresh_rate();

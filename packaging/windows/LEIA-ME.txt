@@ -10,8 +10,8 @@ Teclas
 - Setas, ENTER, ESC como no jogo original (teclas redefiniveis em CHANGE CONTROLS).
 - F8: graficos HD (fica salvo em port.cfg): desligado -> cada pacote encontrado em
   <pasta do jogo>\hd\<pacote>\ (ex.: anime, animevideo, x4plus). Os pacotes trocam os
-  sprites do jogo por versoes ampliadas 4x; a jogabilidade nao muda. So vale dentro do
-  jogo (abertura, menus e mapa continuam como antes).
+  sprites e as fontes por versoes ampliadas 4x em todas as telas (abertura, titulo, menus,
+  mapa dos planetas, jogo, pausa e resultado); a jogabilidade nao muda.
 - F10: muda o modo de escala da imagem (fica salvo em port.cfg):
     smooth3x  bordas suavizadas em 3x (padrao)
     smooth2x  bordas suavizadas em 2x

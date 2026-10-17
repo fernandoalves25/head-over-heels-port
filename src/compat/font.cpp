@@ -97,7 +97,7 @@ void textout(BITMAP *bmp, const FONT *f, const char *s, int x, int y, int color)
     if (!f) f = &g_font;
     if (color < 0) color = 0xFFFF;  // -1 no Allegro = cores da propria fonte; aqui, branco
     hd::Nest nest;
-    if (nest.outer && bmp->hd_list && hd::touch(bmp) && *s) {  // HD: o texto vai como uma copia 1x
+    if (nest.outer && *s && hd::touch(bmp)) {  // HD: o texto vai como uma copia 1x
         BITMAP *tmp = create_bitmap(static_cast<int>(std::strlen(s)) * f->cell_w, f->cell_h);
         clear_to_color(tmp, MASK_COLOR_16);
         textout(tmp, f, s, 0, 0, color);

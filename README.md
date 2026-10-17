@@ -137,12 +137,13 @@ Com vsync, o present espera o retraço e, no modo metade, o mesmo quadro é apre
 Se o vsync não segurar (driver forçando desligado, renderer por software), o port percebe que os
 quadros não caem na grade do retraço e passa a segurar o ritmo pelo relógio. `HOH_SHOW_FPS=1` mostra
 o contador; `HOH_PROFILE=arquivo` grava por segundo o ritmo (taxa do monitor, alvo, vsync,
-retraços perdidos, tempo de trabalho por quadro) e os tempos do laço; `HOH_REFRESH=N` finge um
-monitor de N Hz (testes).
+retraços perdidos, tempo de trabalho por quadro) e os tempos do laço, com o pior quadro do
+segundo; `HOH_REFRESH=N` finge um monitor de N Hz (testes).
 
 ## Gráficos HD (PC)
 
-Pacotes de sprites ampliados trocam os gráficos do jogo por versões HD, sem mudar a jogabilidade.
+Pacotes de sprites ampliados trocam os gráficos do jogo por versões HD, sem mudar a jogabilidade,
+em todas as telas: abertura, tela-título, menus, mapa dos planetas, jogo, pausa e resultado.
 O jogo continua desenhando o quadro em 640×480 exatamente como antes; cada desenho é gravado numa
 lista (`src/compat/hd_core.cpp`) e, no present, a lista é refeita na GPU (`hd_render.cpp`) com as
 imagens do pacote, na resolução nativa dele (2560×1920 com pacotes 4×), e só então reduzida para a
@@ -158,12 +159,25 @@ janela. **F8** alterna desligado → cada pacote; fica salvo em `port.cfg` (`hd 
   ladrilho HD com os blocos correspondentes (`src/game/hd_assets.cpp`).
 - Objetos: o jogo não ordena por profundidade, ele recorta cada objeto onde outro está na frente.
   O HD desenha os quadros inteiros na ordem dada pelos próprios recortes.
-- Só o jogo usa o HD; abertura, menus e mapa continuam no modo clássico. No R36S fica desligado.
+- Telas fora do jogo: os bitmaps de trabalho (painel do menu, linha de texto, logo, copyright,
+  letreiro, fontes tingidas, `g_buffer2` com o quadro guardado para a pausa e as transições) têm
+  lista própria, que começa num `clear_to_color` ou num desenho que cobre o bitmap inteiro. Quando
+  um deles é desenhado em outro, os desenhos dele entram na lista de destino (se o resultado é o
+  mesmo) ou ele vira uma textura própria na GPU (linha do menu esticada, painel em fade, quadro do
+  jogo escurecido). O tingimento HSL das fontes (`tint_bitmap`), a silhueta das sombras e o cinza
+  são transformações aplicadas aos texels do pacote. A água dos menus entra como cópia 1x do quadro
+  (com filtro); a transição em colunas copia o quadro antigo uma vez por passo.
+- No R36S (e no PC sem pacotes) nada é gravado.
 - Gerar os pacotes (scripts em `HeadOverHeels/re/remaster`, fora deste repositório porque usam os
   gráficos do jogo): `hohfmt.py sprites` → `upscale.py` (Real-ESRGAN ncnn-vulkan, 4×, mantendo a
   transparência) → `make_qoi.py`. Os pacotes são derivados do jogo: não redistribuir.
 - Testes: `scripts/hd-tour.sh` desenha as 276 salas e confere se a lista refaz o quadro 1x pixel a
-  pixel (hoje: 0 diferenças); `HOH_HD_VERIFY=arquivo` faz a mesma conta durante o jogo.
+  pixel (hoje: 0 diferenças); `scripts/hd-states.sh` percorre com teclas roteirizadas a abertura, o
+  título, os menus, o mapa, o jogo, a pausa e o resultado e exige 0 pixels diferentes em todo
+  estado (hoje: 0). `HOH_HD_VERIFY=arquivo` faz a mesma conta durante o jogo, por estado, a cada
+  30 quadros (`HOH_HD_VERIFY_EVERY=n`); com `HOH_HD_VERIFY_DEEP=1` também confere cada lista de
+  origem quando ela é usada. `HOH_TEST_GAMEOVER_MS=t` leva o jogo à tela de resultado no instante t
+  (para os testes).
 
 ## Rodar
 

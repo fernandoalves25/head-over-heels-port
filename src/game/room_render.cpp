@@ -896,7 +896,7 @@ void Room_light_walls(Room *self, int tile) {
 // 0x004159f0 draw_sprite_h_flip_lit: draw_sprite_lit espelhado na horizontal (mesmo recorte: so
 // contra o tamanho do destino, a altura com o y original), luz em 32 avos (light >> 3).
 void draw_sprite_h_flip_lit(BITMAP *dst, BITMAP *sprite, int x, int y, int light) {
-    if (dst->hd_list && hd::touch(dst))  // port: renderizador HD
+    if (hd::touch(dst))  // port: renderizador HD
         hd::op_sprite(dst, sprite, 0, 0, sprite->w, sprite->h, x, y, hd::MASKED | hd::HFLIP, light >> 3);
     const uint32_t mask = static_cast<uint32_t>(makecol(0xff, 0, 0xff));
     const int y_orig = y;

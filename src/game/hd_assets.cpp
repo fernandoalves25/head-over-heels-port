@@ -59,7 +59,7 @@ void tag_from_coords(BITMAP *real, const BITMAP *coord, const BITMAP *src) {
 }  // namespace
 
 void hd_register_assets() {
-    if (!g_data) return;
+    if (!g_data || !hd::enabled()) return;
     const GameData &d = *g_data;
     for (size_t i = 0; i < d.blocks.size(); i++)
         for (size_t di = 0; di < d.blocks[i].dirs.size(); di++)
@@ -91,6 +91,7 @@ void hd_register_assets() {
 }
 
 void hd_tag_sets() {
+    if (!hd::enabled()) return;
     // pisos: Mobile_cut_tiles sobre uma copia do FloorSet com os quadros-fonte trocados
     for (int i = 0; i < g_mobile_count; i++) {
         FloorSet *m = g_mobiles[i];
@@ -159,7 +160,6 @@ void hd_room_tour(const char *out_dir) {
             platform_capture_next((dir + fmt("/sala_%04d.bmp", id)).c_str());
             request_video_bitmap(screen);
         }
-        hd::frame_done();
         g_char_rooms[g_active_room_slot] = saved;
         Room_destroy(r);
     }
