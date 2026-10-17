@@ -5,6 +5,7 @@
 #include "game/crt.h"
 #include "game/gfx_util.h"
 #include "game/globals.h"
+#include "game/lang.h"
 #include "game/menu.h"
 #include "game/controllers.h"
 #include "game/engine_types.h"
@@ -222,7 +223,7 @@ void draw_intro_screen(BITMAP *dst) {
         }
         Room_draw_glows(char_room(0), dst);
         clear_to_color(g_bmp_text_line, g_mask_color);
-        draw_text_w18(g_bmp_text_line, g_font_medium, s_PRESENTS____00433374, 0, 0);
+        draw_text_w18(g_bmp_text_line, g_font_medium, tr(s_PRESENTS____00433374), 0, 0);  // port: tr (idiomas)
         if (alpha == 0x1f) {
             draw_sprite(dst, g_bmp_text_line, 0x78, 0x140);
         } else {
@@ -256,7 +257,7 @@ void draw_credits_ticker(BITMAP *dst) {
         shadow_alpha = fade * 3;
         text_alpha = fade * 0xc;
     }
-    int w = static_cast<int>(std::strlen(g_ticker_texts[g_ticker_index])) * 0x12;
+    int w = g_bmp_ticker[g_ticker_index]->w;  // len*18; port: a frase traduzida (rebuild_ticker_bitmaps)
     int x = 0x140 - (w >> 1);
     fblend_trans(g_bmp_ticker_shadow[g_ticker_index], dst, x + 3, g_screen_h - 0x13, shadow_alpha);
     if (fade != 0x14) {

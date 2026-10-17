@@ -200,13 +200,42 @@ O jogo continua desenhando o quadro de 640×480 (o "miolo") como no original, e 
   `scripts/responsive-test.sh` roda 16:9, 21:9, em pé e 4:3 e confere o HD contra o 1x em cada
   quadro (0 diferenças).
 
+## Idiomas
+
+GAME OPTIONS → LANGUAGE (esquerda/direita) troca na hora entre inglês (padrão, o texto original),
+português, espanhol e chinês; fica salvo em `port.cfg` (`lang = en|pt|es|zh`, ou `HOH_LANG`). Vale
+no PC e no R36S.
+
+- Os textos do jogo continuam em inglês nas tabelas do exe; a tradução é feita na hora de compor
+  cada tela (`tr`/`tr_menu` em `src/game/lang.cpp`, uma tabela só com as quatro línguas). Menus,
+  opções, controles, slots, abertura, letreiro de créditos, mapa dos planetas e tela de resultado
+  são traduzidos; os nomes das teclas ficam como estão. As linhas em fonte pequena da tela de
+  resultado (código de recorde) ficam em inglês no chinês (a fonte pequena não tem espaço para
+  os ideogramas).
+- As fontes em bitmap do jogo só têm maiúsculas sem acento. Cada fonte ganha uma faixa de glifos
+  extras (`src/game/lang_glyphs.cpp`): as letras acentuadas são a própria letra da fonte
+  (comprimida na vertical para caber o acento) com o acento desenhado no mesmo estilo; ¡ é o ! com
+  o ponto em cima; os caracteres chineses vêm da GNU Unifont (16×16), com o degradê e o contorno da
+  fonte, e na fonte de 26 linhas são espaçados de modo que a redução dos itens do menu para 18
+  linhas não apague nenhum traço. As faixas são tingidas junto com a fonte, e no HD as letras
+  usam a fonte ampliada do pacote.
+- `tools/make_cjk_glyphs.py <unifont-18.0.01.hex.gz>` regera `src/game/lang_cjk.inc` (só os
+  ideogramas usados nas traduções) sempre que o chinês mudar.
+- Teste: `scripts/lang-test.sh` troca o idioma pelo menu e confere o `port.cfg`;
+  `HOH_LANG=pt|es|zh scripts/hd-states.sh` passa por todas as telas no idioma e confere o HD contra
+  o 1x (0 diferenças nos quatro idiomas). `HOH_LANG_DUMP=pasta` grava as faixas de glifos extras.
+
+Os ideogramas são da [GNU Unifont](https://unifoundry.com/unifont/) 18.0.01, © Roman Czyborra,
+Paul Hardy e colaboradores, sob a SIL Open Font License 1.1 (ou GNU GPL 2+ com exceção para
+fontes).
+
 ## Rodar
 
 `hoh [--data PASTA] [--fullscreen]`. Sem `--data`, procura os dados na pasta do executável,
 na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
 - Alt+Enter ou F11: alterna tela cheia; F10: modo de escala da imagem; F9: quadros por segundo (auto, 120, 60, 30);
-  F8: pacote de gráficos HD; F7: tela responsiva / 4:3.
+  F8: pacote de gráficos HD; F7: tela responsiva / 4:3. Idioma: GAME OPTIONS → LANGUAGE.
 - Variáveis: `HOH_FULLSCREEN=0/1`, `HOH_HANDHELD=1` (força modo console portátil),
   `HOH_AUDIO_BUFFER=1024` (tamanho do buffer de áudio).
 

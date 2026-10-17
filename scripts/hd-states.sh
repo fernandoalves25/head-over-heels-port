@@ -6,13 +6,14 @@
 # cada lista de origem no momento em que e usada (HOH_HD_VERIFY_DEEP). Passa com 0 diferencas em
 # todo estado. Usa uma COPIA dos dados. Saida em build/hd-states/.
 # Uso: scripts/hd-states.sh [pasta_do_jogo] [pacote] [binario]
+#   HOH_LANG=pt|es|zh: no idioma dado (saida em build/hd-states-<idioma>/).
 cd "$(dirname "$0")/.."
 SRC="${1:-/mnt/f/headover/HeadOverHeels}"
 PACK="${2:-anime}"
 BIN="${3:-./build/linux/hoh}"
 [ "$BIN" = "./build/linux/hoh" ] && { cmake --build build/linux -j"$(nproc)" --target hoh > build/hd-states-build.log 2>&1 || { grep -E "error" build/hd-states-build.log | head; exit 1; }; }
-WORK=/tmp/hoh-hd-states
-OUT=$(pwd)/build/hd-states
+WORK=/tmp/hoh-hd-states${HOH_LANG:+-$HOH_LANG}
+OUT=$(pwd)/build/hd-states${HOH_LANG:+-$HOH_LANG}
 rm -rf "$WORK" "$OUT"; mkdir -p "$WORK/Sound" "$OUT"
 cp "$SRC/HoHOriginal.dat" "$WORK/"; cp "$SRC"/Sound/* "$WORK/Sound/"
 K=""

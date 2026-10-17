@@ -10,6 +10,7 @@
 #include "game/globals.h"
 #include "game/gfx_util.h"
 #include "game/intro.h"
+#include "game/lang.h"
 #include "game/main_loop.h"
 #include "game/music.h"
 #include "game/sound.h"
@@ -552,6 +553,10 @@ void menu_update() {
                                 platform_cycle_fps_mode(left ? -1 : 1);
                                 options_text_frame_rate();
                                 break;
+                            case 6:  // port: LANGUAGE (troca na hora; grava no port.cfg)
+                                lang_set(static_cast<Lang>((lang_current() + (left ? LANG_COUNT - 1 : 1)) % LANG_COUNT));
+                                options_text_language();
+                                break;
                             default:
                                 break;
                         }
@@ -663,7 +668,7 @@ void menu_compose_items() {
         clear_to_color(g_bmp_text_line, g_mask_color);
         // fonte pela altura do item: g_font_w18_tinted[altura - 18] (0x91dfb4 + altura*4)
         draw_text_w18(g_bmp_text_line, g_font_w18_tinted[g_menu_item_indent[i] - 0x12],
-                      g_menu_items[g_menu_id][i], 0, 0);
+                      tr_menu(g_menu_id, g_menu_items[g_menu_id][i]), 0, 0);  // port: tr_menu (idiomas)
         if (g_menu_choice == 0 && i == g_menu_sel) {
             off = 3;
             g_menu_closing = 1;
@@ -697,9 +702,10 @@ void draw_menu_screen(BITMAP *dst) {
     }
     menu_compose_items();
     if (g_game_state == 3 && g_menu_id == 6) {
-        if (g_fish_count > 1) std::sprintf(text, s__2i_SAVES_LEFT_00433244, g_fish_count);
-        else if (g_fish_count == 1) std::sprintf(text, "%s", s_1_SAVE_LEFT_00433234);
-        else std::sprintf(text, "%s", s_NO_SAVES_LEFT_00433224);
+        // port: tr (idiomas)
+        if (g_fish_count > 1) std::snprintf(text, sizeof text, tr(s__2i_SAVES_LEFT_00433244), g_fish_count);
+        else if (g_fish_count == 1) std::snprintf(text, sizeof text, "%s", tr(s_1_SAVE_LEFT_00433234));
+        else std::snprintf(text, sizeof text, "%s", tr(s_NO_SAVES_LEFT_00433224));
         tint_bitmap(g_font_medium, g_font_tinted, 100, 200, 0xff, 0, 0, 0, 0, 0, 0, 0, 1);
         draw_text_w18(g_bmp_panel, g_font_tinted, text, 0x32, 0);
     }
@@ -778,15 +784,23 @@ void options_text_gfx_mode() {
     std::sprintf(g_str_gfx_mode, "%s", s_GFX_MODE__FULL_SCREEN_00433190);
 }
 
-// port: GAME OPTIONS ganha FRAME RATE (quadros por segundo; no R36S nao ha F9) no lugar do BACK,
-// que desce para o item 6. O painel sobe 15 px para o menu continuar centrado.
+// port: GAME OPTIONS ganha FRAME RATE (quadros por segundo; no R36S nao ha F9) no lugar do BACK e
+// LANGUAGE (idioma dos textos); o BACK desce para o item 7. O painel sobe 30 px para o menu
+// continuar centrado.
 void options_port_init() {
-    std::snprintf(g_menu_items[4][6], sizeof g_menu_items[4][6], "BACK");
+    std::snprintf(g_menu_items[4][7], sizeof g_menu_items[4][7], "BACK");
     g_menu_item_adjustable[4][5] = 1;
-    g_menu_item_adjustable[4][6] = 0;
-    g_menu_count[4] = 7;
-    g_menu_y[4] = 155;
+    g_menu_item_adjustable[4][6] = 1;
+    g_menu_item_adjustable[4][7] = 0;
+    g_menu_count[4] = 8;
+    g_menu_y[4] = 140;
     options_text_frame_rate();
+    options_text_language();
+}
+
+// "LANGUAGE:     ENGLISH" (21 colunas); nos outros idiomas tr_menu poe o nome do idioma atual.
+void options_text_language() {
+    std::snprintf(g_menu_items[4][6], sizeof g_menu_items[4][6], "LANGUAGE:%12s", "ENGLISH");
 }
 
 // "FRAME RATE:      AUTO" / "FRAME RATE:   120 FPS" (21 colunas, como os outros itens)

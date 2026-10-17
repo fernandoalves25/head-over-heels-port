@@ -5,6 +5,8 @@
 #include "compat/hd_render.h"
 #include "game/data_bridge.h"
 #include "game/globals.h"
+#include "game/lang.h"
+#include "game/lang_glyphs.h"
 #include "game/menu.h"
 #include "game/sound.h"
 
@@ -106,6 +108,9 @@ void tint_region(BITMAP *src, BITMAP *dst, int hue, int sat, int lum, int boost_
     x.c = (int16_t)lum;
     x.d = (int16_t)boost_pct;
     hd::tinted(src, dst, x, src_x, src_y, dst_x, dst_y, w, h, (uint8_t)copy_mask != 0);
+    // port (idiomas): fonte inteira tingida -> a faixa de glifos extras dela tambem
+    if (!kBgr && w == src->w && h == src->h && src_x == 0 && src_y == 0 && dst_x == 0 && dst_y == 0)
+        lang_glyphs_on_tint(src, dst, hue, sat, lum, boost_pct);
 }
 
 // port (HD): o tingimento para o renderizador. 1x: o mesmo pixel de tint_bitmap.
@@ -181,11 +186,15 @@ int glyph_index_mixed(char c) {
 }
 
 // 0x004027f0 draw_text_w18
+// port (idiomas): o texto e UTF-8 (o ASCII sai igual ao original); o que a fonte nao tem vem da
+// faixa de glifos extras (lang_glyphs.cpp) ou vira ?.
 void draw_text_w18(BITMAP *dst, BITMAP *font_strip, const char *text, int x, int y) {
-    const int len = (int)std::strlen(text);
-    for (int i = 0; i < len; i++) {
-        const int glyph = glyph_index_upper(text[i]);
-        masked_blit(font_strip, dst, glyph * 0x12, 0, x, y, 0x12, font_strip->h);
+    for (const char *p = text; *p;) {
+        const uint32_t cp = utf8_next(p);
+        if (cp < 0x80 || !lang_draw_glyph(dst, font_strip, cp, x, y)) {
+            const int glyph = glyph_index_upper(cp < 0x80 ? (char)cp : '?');
+            masked_blit(font_strip, dst, glyph * 0x12, 0, x, y, 0x12, font_strip->h);
+        }
         x += 0x12;
     }
 }
@@ -200,12 +209,14 @@ void draw_text_w10(BITMAP *dst, BITMAP *font_strip, const char *text, int x, int
     }
 }
 
-// 0x004028b0 draw_text_w8
+// 0x004028b0 draw_text_w8 (port: UTF-8, como draw_text_w18)
 void draw_text_w8(BITMAP *dst, BITMAP *font_strip, const char *text, int x, int y) {
-    const int len = (int)std::strlen(text);
-    for (int i = 0; i < len; i++) {
-        const int glyph = glyph_index_mixed(text[i]);
-        masked_blit(font_strip, dst, glyph << 3, 0, x, y, 8, font_strip->h);
+    for (const char *p = text; *p;) {
+        const uint32_t cp = utf8_next(p);
+        if (cp < 0x80 || !lang_draw_glyph(dst, font_strip, cp, x, y)) {
+            const int glyph = glyph_index_mixed(cp < 0x80 ? (char)cp : '?');
+            masked_blit(font_strip, dst, glyph << 3, 0, x, y, 8, font_strip->h);
+        }
         x += 8;
     }
 }
@@ -319,6 +330,35 @@ void build_tinted_fonts() {
     }
 }
 
+// port (idiomas): refaz as frases pre-desenhadas do letreiro no idioma atual (troca no menu). Os
+// bitmaps novos tomam o lugar dos antigos em g_bitmap_registry.
+void rebuild_ticker_bitmaps() {
+    if (!g_font_medium) return;
+    auto replace = [](BITMAP *old, BITMAP *now) {
+        for (int i = 0; i < g_bitmap_registry_count; i++)
+            if (g_bitmap_registry[i] == old) g_bitmap_registry[i] = now;
+        destroy_bitmap(old);
+    };
+    for (int i = 0; i < 24; i++) {
+        if (!g_bmp_ticker[i] || !g_bmp_ticker_shadow[i]) continue;
+        const char *text = tr(g_ticker_texts[i]);
+        const int tw = utf8_cols(text) * 0x12;
+        if (g_bmp_ticker[i]->w != tw) {
+            BITMAP *t = create_bitmap(tw, g_font_medium->h);
+            BITMAP *s = create_bitmap(tw, g_font_medium->h);
+            replace(g_bmp_ticker[i], t);
+            replace(g_bmp_ticker_shadow[i], s);
+            g_bmp_ticker[i] = t;
+            g_bmp_ticker_shadow[i] = s;
+            hd::track(t);
+            hd::track(s);
+        }
+        clear_to_color(g_bmp_ticker[i], g_mask_color);
+        draw_text_w18(g_bmp_ticker[i], g_font_medium, text, 0, 0);
+        make_silhouette(g_bmp_ticker[i], g_bmp_ticker_shadow[i]);
+    }
+}
+
 // 0x0040e9c0 init_ui_graphics
 void init_ui_graphics() {
     g_mask_color = makecol(0xff, 0, 0xff);
@@ -371,10 +411,12 @@ void init_ui_graphics() {
     g_bar_image = g_images[base + 3];
     DAT_0044b7bc = g_images[base + 4];
     DAT_00a4a488 = g_font_small;
+    lang_glyphs_build(g_font_small, 8, true, false);  // port (idiomas): antes do tingimento
     tint_bitmap(g_font_small, g_font_small, 0x3c, 0xbe, 0xb4, 0, -1, 0, 0, 0, 0, 0, 1);
     g_font_w10 = g_images[base + 12];
     g_img_title = g_images[base + 11];
     g_font_w18 = g_images[base + 5];
+    lang_glyphs_build(g_font_w18, 0x12, false, true);  // port (idiomas)
 
     // Fontes derivadas da fonte de 18 px.
     g_font_title = create_bitmap(g_font_w18->w, g_font_w18->h);
@@ -387,6 +429,7 @@ void init_ui_graphics() {
     clear_to_color(g_font_medium, g_mask_color);  // original: vtable+0x9c
     stretch_sprite(g_font_medium, g_font_w18, 0, 0, g_font_w18->w, 0x12);
     hd::tag_stretch_copy(g_font_medium, g_font_w18);  // port (HD): a fonte do pacote, achatada
+    lang_glyphs_build_stretched(g_font_medium, g_font_w18);  // port (idiomas)
     register_bitmap(g_font_medium);
     g_font_tinted = create_bitmap(g_font_medium->w, g_font_medium->h);
     hd::track(g_font_tinted);
@@ -448,14 +491,16 @@ void init_ui_graphics() {
     for (int i = 0; i < 5; i++) g_water_shapes[i] = g_images[base + 6 + i];
 
     // Frases do ticker de creditos pre-renderizadas (len*18 x 18) e suas silhuetas.
+    // port (idiomas): a frase traduzida (tr), com a largura em caracteres UTF-8.
     for (int i = 0; i < 24; i++) {
-        const int tw = (int)std::strlen(g_ticker_texts[i]) * 0x12;
+        const char *text = tr(g_ticker_texts[i]);
+        const int tw = utf8_cols(text) * 0x12;
         g_bmp_ticker[i] = create_bitmap(tw, g_font_medium->h);
         g_bmp_ticker_shadow[i] = create_bitmap(tw, g_font_medium->h);
         hd::track(g_bmp_ticker[i]);
         hd::track(g_bmp_ticker_shadow[i]);
         clear_to_color(g_bmp_ticker[i], g_mask_color);  // original: vtable+0x9c
-        draw_text_w18(g_bmp_ticker[i], g_font_medium, g_ticker_texts[i], 0, 0);
+        draw_text_w18(g_bmp_ticker[i], g_font_medium, text, 0, 0);
         make_silhouette(g_bmp_ticker[i], g_bmp_ticker_shadow[i]);
         register_bitmap(g_bmp_ticker[i]);
         register_bitmap(g_bmp_ticker_shadow[i]);

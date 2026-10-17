@@ -31,6 +31,9 @@ bool platform_smooth_enabled(void);
 void platform_canvas_size(int *w, int *h);
 // O bitmap vai ser destruido: deixa de ser o "ultimo mostrado" (que a janela redesenha).
 void platform_forget_bitmap(BITMAP *bmp);
+// Idioma dos textos (port.cfg "lang" / HOH_LANG): "en", "pt", "es" ou "zh"; set grava o port.cfg.
+const char *platform_lang(void);
+void platform_set_lang(const char *code);
 // Em volta de cada quadro interpolado: o fim segura o ritmo (a taxa do monitor dividida por um
 // inteiro: 120 Hz -> 120 ou 60 quadros novos por segundo), repetindo o quadro no vsync ou, se o
 // vsync nao segurar, esperando pelo relogio; no modo auto, cai para a metade se o PC nao acompanhar.

@@ -7,6 +7,8 @@
 #include "game/globals.h"
 #include "game/intro.h"
 #include "game/hd_assets.h"
+#include "game/lang.h"
+#include "game/lang_glyphs.h"
 #include "game/menu.h"
 #include "game/music.h"
 #include "game/engine_data.h"
@@ -81,6 +83,7 @@ void triple_buffer_init() {
 // destrutor virtual; no port pertencem ao GameData (g_data), destruido aqui.
 void free_game_resources() {
     free_canvas();  // port: modo responsivo
+    lang_glyphs_free();  // port: idiomas
     for (int i = 0; i < g_bitmap_registry_count; i++) destroy_bitmap(g_bitmap_registry[i]);
     g_bitmap_registry_count = 0;
     engine_free_game_objects();  // blocos/moveis/nomeados/mundos (destrutores virtuais no original)
@@ -465,6 +468,7 @@ int game_main(int argc, char **argv) {
     }
     // center_window (0x402180): o SDL ja centraliza a janela.
     triple_buffer_init();
+    lang_init();          // port: idioma do port.cfg (lido no set_gfx_mode)
     options_port_init();  // port: item FRAME RATE (depois do set_gfx_mode, que le o port.cfg)
     if (install_joystick(JOY_TYPE_AUTODETECT) != 0) g_joystick_enabled = 0;
     if (num_joysticks == 0) g_joystick_enabled = 0;

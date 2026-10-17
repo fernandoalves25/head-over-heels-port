@@ -41,5 +41,7 @@ void register_bitmap(BITMAP *bmp);
 void build_tinted_fonts();
 // 0x40e9c0: fontes, logo, copyright, ticker, icones do HUD e bitmaps de trabalho da interface.
 void init_ui_graphics();
+// port (idiomas): refaz as frases do letreiro de creditos no idioma atual.
+void rebuild_ticker_bitmaps();
 
 }  // namespace hoh

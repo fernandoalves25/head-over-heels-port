@@ -24,6 +24,7 @@ void options_text_gfx_mode();         // 0x0040a350
 // port: item FRAME RATE no menu GAME OPTIONS (antes do BACK); chamar depois de set_gfx_mode.
 void options_port_init();
 void options_text_frame_rate();
+void options_text_language();  // port: item LANGUAGE de GAME OPTIONS
 
 void input_read_controls();           // 0x00407360
 void controls_build_menu_text(bool full);  // 0x0040a260

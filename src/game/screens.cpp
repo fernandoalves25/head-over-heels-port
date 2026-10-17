@@ -14,6 +14,7 @@
 #include "game/gameplay.h"
 #include "game/gfx_util.h"
 #include "game/globals.h"
+#include "game/lang.h"
 #include "game/main_loop.h"
 #include "game/menu.h"
 #include "game/music.h"
@@ -884,14 +885,15 @@ void update_state_empire_map() {
 // HEAD OVER HEELS carimbado na agua depois de 100 ticks), estatisticas, classificacao e o codigo
 // de recorde, compostos em g_bmp_panel.
 void draw_end_screen(BITMAP *dst) {
+    // port (idiomas): frases por tr(), centradas pelo numero de caracteres UTF-8
     char text[256];
     fblend_trans(g_bmp_logo_shadow, dst, 0xbc, 0x35, 0x3c);
     draw_sprite(dst, g_bmp_logo, 0xb9, 0x32);
     clear_to_color(g_bmp_panel, g_mask_color);
     if (g_lives[0] == 0 || g_lives[1] == 0) {
-        std::sprintf(text, "%s", s_GAME_OVER_0043333c);
+        std::sprintf(text, "%s", tr(s_GAME_OVER_0043333c));
     } else {
-        std::sprintf(text, "%s", s_PEOPLE_SALUTE_YOU__00433348);
+        std::sprintf(text, "%s", tr(s_PEOPLE_SALUTE_YOU__00433348));
         if (g_frame_counter > 100) {
             int v = (g_frame_counter * 5 - 500) * 2;
             if (v > 0xff) v = 0xff;
@@ -899,46 +901,46 @@ void draw_end_screen(BITMAP *dst) {
                                g_screen_h / 2 - g_img_ending_logo->h / 2, static_cast<int16_t>(v));
         }
     }
-    draw_text_w18(g_bmp_panel, g_font_w18_tinted[6], text, 0xbe - str_len(text) * 9, 0);  // DAT_0091e014
-    std::sprintf(text, s__i___ROOMS_EXPLORED__00433324, g_percent_explored);
+    draw_text_w18(g_bmp_panel, g_font_w18_tinted[6], text, 0xbe - utf8_cols(text) * 9, 0);  // DAT_0091e014
+    std::snprintf(text, sizeof text, tr(s__i___ROOMS_EXPLORED__00433324), g_percent_explored);
     tint_bitmap(g_font_medium, g_font_tinted, 0x78, 0x96, 0xd7, 0, -1, 0, 0, 0, 0, 0, 1);
-    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - str_len(text) * 9, 0x32);
-    std::sprintf(text, s_LIBERATED__i_PLANETS__0043330c, g_crowns);
+    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - utf8_cols(text) * 9, 0x32);
+    std::snprintf(text, sizeof text, tr(s_LIBERATED__i_PLANETS__0043330c), g_crowns);
     tint_bitmap(g_font_medium, g_font_tinted, 0xdc, 100, 0xd7, 0, -1, 0, 0, 0, 0, 0, 1);
-    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - str_len(text) * 9, 0x5f);
-    std::sprintf(text, "%s", s_RATING_00433304);
+    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - utf8_cols(text) * 9, 0x5f);
+    std::sprintf(text, "%s", tr(s_RATING_00433304));
     tint_bitmap(g_font_medium, g_font_tinted, 0xa0, 0x96, 0xd7, 0, -1, 0, 0, 0, 0, 0, 1);
-    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - str_len(text) * 9, 0x82);
+    draw_text_w18(g_bmp_panel, g_font_tinted, text, 0xbe - utf8_cols(text) * 9, 0x82);
     int rating = g_percent_explored / 10;
     if (g_crowns == 5 && (g_lives[0] != 0 || g_lives[1] != 0)) rating = 9;
     else if (rating == 9 && g_crowns != 5) rating = 8;
     // original: com 100% explorado e menos de 5 coroas o indice e 10 e le alem de g_rating_names a
     // tabela seguinte do exe (g_key_names, 0x4321a4: [0] = "").
-    std::strcpy(text, rating < 10 ? g_rating_names[rating] : g_key_names[rating - 10]);
-    draw_text_w18(g_bmp_panel, g_font_w18_tinted[0], text, 0xbe - str_len(text) * 9, 0xaa);
+    std::strcpy(text, tr(rating < 10 ? g_rating_names[rating] : g_key_names[rating - 10]));
+    draw_text_w18(g_bmp_panel, g_font_w18_tinted[0], text, 0xbe - utf8_cols(text) * 9, 0xaa);
     const int center = g_bmp_panel->w / 2;
     switch (g_hiscore_state) {
         case 0:
-            std::sprintf(text, s_Retrospec_High_Score_Code___s_004332e4, g_hiscore_code);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xd7);
-            std::sprintf(text, "%s", s_Press__S__To_Send_The_Code_To_Th_004332b4);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xea);
+            std::snprintf(text, sizeof text, tr(s_Retrospec_High_Score_Code___s_004332e4), g_hiscore_code);
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xd7);
+            std::sprintf(text, "%s", tr(s_Press__S__To_Send_The_Code_To_Th_004332b4));
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xea);
             break;
         case 1:
-            std::sprintf(text, s_Enter_Your_Name___s_004332a0, g_hiscore_name);
+            std::snprintf(text, sizeof text, tr(s_Enter_Your_Name___s_004332a0), g_hiscore_name);
             draw_text_w8(g_bmp_panel, g_font_small, text, 0, 0xea);
             break;
         case 2:
-            std::sprintf(text, "%s", s_Congratulations__0043328c);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xd7);
-            std::sprintf(text, s_High_Score_Position___i_00433274, g_hiscore_position);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xea);
+            std::sprintf(text, "%s", tr(s_Congratulations__0043328c));
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xd7);
+            std::snprintf(text, sizeof text, tr(s_High_Score_Position___i_00433274), g_hiscore_position);
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xea);
             break;
         case 3:
-            std::sprintf(text, s_Retrospec_High_Score_Code___s_004332e4, g_hiscore_code);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xd7);
-            std::sprintf(text, "%s", s_Error__Press__S__to_resend__00433254);
-            draw_text_w8(g_bmp_panel, g_font_small, text, center - str_len(text) * 4, 0xea);
+            std::snprintf(text, sizeof text, tr(s_Retrospec_High_Score_Code___s_004332e4), g_hiscore_code);
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xd7);
+            std::sprintf(text, "%s", tr(s_Error__Press__S__to_resend__00433254));
+            draw_text_w8(g_bmp_panel, g_font_small, text, center - utf8_cols(text) * 4, 0xea);
             break;
         default:
             break;
@@ -979,27 +981,31 @@ void draw_empire_screen(BITMAP *dst) {
     else if (g_substate == 1) alpha = 0xff;
     else if (g_substate == 2) alpha = (0xc - g_substate_timer) * 0x14;
     clear_to_color(g_bmp_text_line, g_mask_color);
-    draw_text_w18(g_bmp_text_line, g_font_title, s_THE_BLACKTOOTH_EMPIRE_0043335c, 0, 0);
+    // port (idiomas): titulo traduzido, recentrado (o ingles tem 21 colunas em x = 0x82)
+    const char *title = tr(s_THE_BLACKTOOTH_EMPIRE_0043335c);
+    const int tx = 0x82 + (21 - utf8_cols(title)) * 9;
+    draw_text_w18(g_bmp_text_line, g_font_title, title, 0, 0);
     make_silhouette(g_bmp_text_line, g_bmp_text_line_shadow);
     const int shadow_alpha = alpha / 4;
-    fblend_trans(g_bmp_text_line_shadow, dst, 0x85, 0x35, shadow_alpha);
-    if (alpha == 0xff) draw_sprite(dst, g_bmp_text_line, 0x82, 0x32);
-    else fblend_trans(g_bmp_text_line, dst, 0x82, 0x32, alpha);
+    fblend_trans(g_bmp_text_line_shadow, dst, tx + 3, 0x35, shadow_alpha);
+    if (alpha == 0xff) draw_sprite(dst, g_bmp_text_line, tx, 0x32);
+    else fblend_trans(g_bmp_text_line, dst, tx, 0x32, alpha);
     for (int i = 0; i < 5; i++) {
         BITMAP *font = g_font_tinted;
+        const char *name = tr(g_planet_names[i]);  // port: tr (idiomas)
         // original: o nome e desenhado duas vezes (a 1a com g_font_tinted e logo apagada)
         clear_to_color(g_bmp_text_line, g_mask_color);
-        draw_text_w18(g_bmp_text_line, font, g_planet_names[i], 0, 0);
+        draw_text_w18(g_bmp_text_line, font, name, 0, 0);
         bool gray = false;
         if (!g_planets_freed[i]) {
             font = g_font_medium;
             gray = true;
         }
         clear_to_color(g_bmp_text_line, g_mask_color);
-        draw_text_w18(g_bmp_text_line, font, g_planet_names[i], 0, 0);
+        draw_text_w18(g_bmp_text_line, font, name, 0, 0);
         make_silhouette(g_bmp_text_line, g_bmp_text_line_shadow);
         fblend_trans(g_icon_crown_shadow, dst, g_planet_x[i] + 3, g_planet_y[i] + 3, shadow_alpha);
-        const int len = str_len(g_planet_names[i]);
+        const int len = utf8_cols(name);
         fblend_trans(g_bmp_text_line_shadow, dst, (3 - len) * 9 + g_planet_x[i], g_planet_y[i] + 0x39,
                      shadow_alpha);
         BITMAP *crown = gray ? g_icon_crown_gray : g_icon_crown;

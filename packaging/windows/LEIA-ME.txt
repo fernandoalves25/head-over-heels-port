@@ -29,6 +29,8 @@ Teclas
     30        so os 30 quadros do jogo original
   A logica continua a 30 passos por segundo como no original; os quadros a mais mostram
   o movimento interpolado entre um passo e outro, sem mudar a jogabilidade.
+- GAME OPTIONS > LANGUAGE: idioma dos textos, troca na hora (fica salvo em port.cfg):
+    ENGLISH (padrao, o original), PORTUGUES, ESPANOL e chines.
 - F11 ou Alt+Enter: alterna janela / tela cheia (com a tela responsiva, a imagem ocupa o
   monitor inteiro; em 4:3, com faixas nas laterais).
 - Controles USB/XInput funcionam como joystick (ative em CHANGE CONTROLS).
@@ -45,3 +47,6 @@ Arquivos
 - hoh.exe        o jogo
 - hoh-viewer.exe visualizador dos sprites/sons do HoHOriginal.dat
 - SDL2.dll       biblioteca SDL 2.32.10 (zlib license, libsdl.org)
+
+Os caracteres chineses sao da GNU Unifont 18.0.01 (unifoundry.com/unifont), (c) Roman Czyborra,
+Paul Hardy e colaboradores, sob a SIL Open Font License 1.1 (ou GNU GPL 2+ com excecao para fontes).

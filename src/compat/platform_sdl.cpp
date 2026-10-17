@@ -46,6 +46,8 @@ bool g_fps_cfg_set = false;
 std::string g_hd_pack;
 // Modo responsivo (port.cfg "responsive"; F7 alterna): a tela acompanha a proporcao da janela.
 bool g_responsive = true;
+// Idioma dos textos (port.cfg "lang"; GAME OPTIONS > LANGUAGE): en, pt, es ou zh.
+std::string g_lang = "en";
 bool g_hd_scanned = false;
 BITMAP *g_shown = nullptr;  // bitmap mostrado na tela (screen ou o ultimo show_video_bitmap)
 GFX_DRIVER g_driver = {0, "SDL2", "SDL2", "SDL2", 1, 0, 0};
@@ -72,6 +74,7 @@ void load_port_cfg() {
                 if (std::strcmp(key_, "fps") == 0) { g_fps_mode = fps_mode_from_name(val); g_fps_cfg_set = true; }
                 if (std::strcmp(key_, "hd") == 0) g_hd_pack = val;
                 if (std::strcmp(key_, "responsive") == 0) g_responsive = std::atoi(val) != 0;
+                if (std::strcmp(key_, "lang") == 0) g_lang = val;
                 if (std::strcmp(key_, "smooth") == 0 && !g_fps_cfg_set) {  // port.cfg antigo (liga/desliga)
                     g_fps_mode = std::atoi(val) != 0 ? kFpsAuto : kFpsOff;
                     g_fps_cfg_set = true;
@@ -85,6 +88,7 @@ void load_port_cfg() {
     if (const char *env = std::getenv("HOH_FPS")) { g_fps_mode = fps_mode_from_name(env); g_fps_cfg_set = true; }
     if (const char *env = std::getenv("HOH_HD")) g_hd_pack = env;
     if (const char *env = std::getenv("HOH_RESPONSIVE")) g_responsive = std::atoi(env) != 0;
+    if (const char *env = std::getenv("HOH_LANG")) g_lang = env;
 }
 
 void save_port_cfg() {
@@ -103,6 +107,8 @@ void save_port_cfg() {
         }
         std::fprintf(f, "# responsive: 1 = a tela acompanha a proporcao da janela, 0 = sempre 4:3   (F7 alterna)\n");
         std::fprintf(f, "responsive = %d\n", g_responsive ? 1 : 0);
+        std::fprintf(f, "# lang: en | pt | es | zh   (GAME OPTIONS > LANGUAGE)\n");
+        std::fprintf(f, "lang = %s\n", g_lang.c_str());
         std::fclose(f);
     }
 }
@@ -704,6 +710,12 @@ void platform_toggle_fullscreen(void) {
 }
 
 bool platform_is_fullscreen(void) { return g_fullscreen; }
+const char *platform_lang(void) { return g_lang.c_str(); }
+void platform_set_lang(const char *code) {
+    g_lang = code ? code : "en";
+    save_port_cfg();
+}
+
 void platform_forget_bitmap(BITMAP *bmp) {
     if (g_shown == bmp) g_shown = screen;
 }
