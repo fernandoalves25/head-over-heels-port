@@ -2,6 +2,8 @@
 
 [English](#english) · [Português](#português)
 
+![Head Over Heels running with an HD sprite pack in 16:9](docs/screenshots/game-hd.png)
+
 ## English
 
 Native port of **Head Over Heels** (the 2003 Retrospec remake) to Windows 10/11 x64,
@@ -11,6 +13,29 @@ The port **ships no game files**: it reads the user's own original data
 (`HoHOriginal.dat`, `Sound/Sound.dat`, `Sound/Theme.ogg`, `Sound/Game.ogg`).
 The reverse-engineering notes (file formats, executable map, decompilation) live outside this
 repository (`../HeadOverHeels/re/`: `FORMATOS.md`, `PLANO_PORT.md`).
+
+### Screenshots
+
+| | |
+|---|---|
+| ![Title screen](docs/screenshots/title-hd.png) | ![Main menu](docs/screenshots/menu-hd.png) |
+| Title screen (HD pack, 16:9 responsive mode) | Main menu |
+| ![Planet map](docs/screenshots/map-hd.png) | ![In game](docs/screenshots/game-hd.png) |
+| Planet map | In game: the room uses the extra width, the HUD runs to the edges |
+
+Original pixels (left) and HD pack (right), same frame:
+
+![Original 1x vs HD](docs/screenshots/compare-1x-hd.png)
+
+The three HD packs (Real-ESRGAN `anime`, `x4plus` and `animevideo`), switched in game with **F8**:
+
+![HD packs](docs/screenshots/packs.png)
+
+Languages (English, Portuguese, Spanish, Chinese) — main menu and GAME OPTIONS:
+
+![Main menu in four languages](docs/screenshots/languages-menu.png)
+
+![Options in four languages](docs/screenshots/languages-options.png)
 
 ### Status
 
@@ -267,6 +292,29 @@ O port **não inclui nenhum arquivo do jogo**: ele lê os dados originais do usu
 (`HoHOriginal.dat`, `Sound/Sound.dat`, `Sound/Theme.ogg`, `Sound/Game.ogg`).
 As notas da engenharia reversa (formatos, mapa do executável, decompilação) ficam fora deste
 repositório (`../HeadOverHeels/re/`: `FORMATOS.md`, `PLANO_PORT.md`).
+
+### Capturas de tela
+
+| | |
+|---|---|
+| ![Tela-título](docs/screenshots/title-hd.png) | ![Menu principal](docs/screenshots/menu-hd.png) |
+| Tela-título (pacote HD, modo responsivo 16:9) | Menu principal |
+| ![Mapa dos planetas](docs/screenshots/map-hd.png) | ![No jogo](docs/screenshots/game-hd.png) |
+| Mapa dos planetas | No jogo: a sala usa a largura extra e o HUD vai até as bordas |
+
+Pixels originais (esquerda) e pacote HD (direita), no mesmo quadro:
+
+![Original 1x e HD](docs/screenshots/compare-1x-hd.png)
+
+Os três pacotes HD (Real-ESRGAN `anime`, `x4plus` e `animevideo`), trocados no jogo com **F8**:
+
+![Pacotes HD](docs/screenshots/packs.png)
+
+Idiomas (inglês, português, espanhol e chinês) — menu principal e GAME OPTIONS:
+
+![Menu principal nos quatro idiomas](docs/screenshots/languages-menu.png)
+
+![Opções nos quatro idiomas](docs/screenshots/languages-options.png)
 
 ### Estado
 
