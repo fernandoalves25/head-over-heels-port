@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-Scope: this license covers the code of this port. It does not cover
-Head Over Heels itself: the original game (Jon Ritman and Bernie Drummond,
-1987) and the Retrospec remake (2003) belong to their authors, including the
-texts and tables extracted from HoH.exe in src/game/globals.cpp and the
-game's data files, which are not part of this repository. The Chinese glyphs
-in src/game/lang_cjk.inc come from GNU Unifont and are under the SIL Open
-Font License 1.1 (see third_party/unifont/).

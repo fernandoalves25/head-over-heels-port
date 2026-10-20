@@ -274,7 +274,9 @@ On the R36S (SDL with KMSDRM) handheld mode is detected automatically: 640×480 
 
 ### License
 
-The port's code is under the [MIT license](LICENSE). It does not cover Head Over Heels itself.
+The port's code is under the [MIT license](LICENSE). It does not cover Head Over Heels itself:
+the original game (Jon Ritman and Bernie Drummond, 1987) and the Retrospec remake (2003) belong
+to their authors.
 
 The original game (Head Over Heels, Retrospec 2003) is freeware and may only be redistributed
 unmodified. This repository contains the port's code, written from an analysis of HoH.exe, and,
@@ -557,7 +559,9 @@ No R36S (SDL com KMSDRM) o modo portátil é detectado sozinho: tela cheia 640×
 
 ### Licença
 
-O código do port está sob a [licença MIT](LICENSE). Ela não cobre o Head Over Heels em si.
+O código do port está sob a [licença MIT](LICENSE). Ela não cobre o Head Over Heels em si: o
+jogo original (Jon Ritman e Bernie Drummond, 1987) e o remake da Retrospec (2003) pertencem aos
+seus autores.
 
 O jogo original (Head Over Heels, Retrospec 2003) é freeware e só pode ser redistribuído sem
 alterações. Este repositório contém o código do port, escrito a partir da análise do HoH.exe, e
