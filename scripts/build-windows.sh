@@ -42,6 +42,8 @@ DIST="$ROOT/dist/windows"
 rm -rf "$DIST" && mkdir -p "$DIST"
 cp build/windows/hoh.exe build/windows/hoh-viewer.exe "$PREFIX/bin/SDL2.dll" "$DIST/"
 cp packaging/windows/* "$DIST/"
+cp LICENSE "$DIST/LICENSE.txt"                                   # licenca do port (MIT)
+cp third_party/unifont/OFL-1.1.txt "$DIST/UNIFONT-OFL-1.1.txt"   # ideogramas (Unifont, OFL 1.1)
 x86_64-w64-mingw32-strip "$DIST/hoh.exe" "$DIST/hoh-viewer.exe"
 echo "== DLLs importadas por hoh.exe:"
 x86_64-w64-mingw32-objdump -p "$DIST/hoh.exe" | grep "DLL Name" | sort -u

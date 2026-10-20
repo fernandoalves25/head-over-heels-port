@@ -1,5 +1,6 @@
 // Gerado por tools/make_cjk_glyphs.py a partir da GNU Unifont 18.0.01 (unifoundry.com).
-// Unifont: SIL Open Font License 1.1 ou GNU GPL 2+ com excecao de fonte. Nao editar a mao.
+// Unifont (Roman Czyborra, Paul Hardy e colaboradores), usada sob a SIL Open Font License 1.1:
+// third_party/unifont/OFL-1.1.txt. Nao editar a mao.
 // Cada glifo: 16 linhas de 16 bits (bit 15 = coluna 0).
 {0x4E00, {0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFE, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000}},  // 一
 {0x4E09, {0x0000, 0x0000, 0x7FFC, 0x0000, 0x0000, 0x0000, 0x0000, 0x3FF8, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFE, 0x0000, 0x0000}},  // 三

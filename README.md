@@ -256,8 +256,8 @@ text), Portuguese, Spanish and Chinese; it is saved in `port.cfg` (`lang = en|pt
   glyph strips.
 
 The ideographs are from [GNU Unifont](https://unifoundry.com/unifont/) 18.0.01, © Roman Czyborra,
-Paul Hardy and contributors, under the SIL Open Font License 1.1 (or GNU GPL 2+ with the font
-exception).
+Paul Hardy and contributors, used under the SIL Open Font License 1.1
+([`third_party/unifont/OFL-1.1.txt`](third_party/unifont/OFL-1.1.txt)).
 
 ### Running
 
@@ -272,14 +272,17 @@ variable).
 
 On the R36S (SDL with KMSDRM) handheld mode is detected automatically: 640×480 fullscreen, no cursor.
 
-### Data license
+### License
+
+The port's code is under the [MIT license](LICENSE). It does not cover Head Over Heels itself.
 
 The original game (Head Over Heels, Retrospec 2003) is freeware and may only be redistributed
 unmodified. This repository contains the port's code, written from an analysis of HoH.exe, and,
 in `src/game/globals.cpp`, the texts and initial tables extracted from HoH.exe. It does not
 contain the graphics, the sounds or `HoHOriginal.dat`: those come from the user's own copy (as do
 the HD packs, generated locally from it). The ideographs in `src/game/lang_cjk.inc` are from GNU
-Unifont (SIL Open Font License 1.1).
+Unifont and stay under the SIL Open Font License 1.1 ([`third_party/unifont/`](third_party/unifont/));
+the Windows and R36S packages include `LICENSE.txt` and `UNIFONT-OFL-1.1.txt`.
 
 ---
 
@@ -537,8 +540,8 @@ no PC e no R36S.
   o 1x (0 diferenças nos quatro idiomas). `HOH_LANG_DUMP=pasta` grava as faixas de glifos extras.
 
 Os ideogramas são da [GNU Unifont](https://unifoundry.com/unifont/) 18.0.01, © Roman Czyborra,
-Paul Hardy e colaboradores, sob a SIL Open Font License 1.1 (ou GNU GPL 2+ com exceção para
-fontes).
+Paul Hardy e colaboradores, usados sob a SIL Open Font License 1.1
+([`third_party/unifont/OFL-1.1.txt`](third_party/unifont/OFL-1.1.txt)).
 
 ### Rodar
 
@@ -552,11 +555,14 @@ na pasta atual e em `data/` ao lado do executável (ou na variável `HOH_DATA`).
 
 No R36S (SDL com KMSDRM) o modo portátil é detectado sozinho: tela cheia 640×480, sem cursor.
 
-### Licença dos dados
+### Licença
+
+O código do port está sob a [licença MIT](LICENSE). Ela não cobre o Head Over Heels em si.
 
 O jogo original (Head Over Heels, Retrospec 2003) é freeware e só pode ser redistribuído sem
 alterações. Este repositório contém o código do port, escrito a partir da análise do HoH.exe, e
 em `src/game/globals.cpp` os textos e tabelas iniciais extraídos do HoH.exe. Não contém os
 gráficos, os sons nem o `HoHOriginal.dat`: eles vêm da cópia do usuário (assim como os pacotes
 HD, gerados localmente a partir dela). Os ideogramas de `src/game/lang_cjk.inc` são da GNU
-Unifont (SIL Open Font License 1.1).
+Unifont e continuam sob a SIL Open Font License 1.1 ([`third_party/unifont/`](third_party/unifont/));
+os pacotes de Windows e R36S trazem `LICENSE.txt` e `UNIFONT-OFL-1.1.txt`.

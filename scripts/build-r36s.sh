@@ -64,6 +64,8 @@ cmake --build build/r36s -j"$(nproc)" --target hoh >> build/r36s.log 2>&1 || { g
 DIST="$ROOT/dist/r36s/ports"
 rm -rf "$ROOT/dist/r36s" && mkdir -p "$DIST"
 cp -r packaging/r36s/. "$DIST/"
+cp LICENSE "$DIST/hohnative/LICENSE.txt"                                   # licenca do port (MIT)
+cp third_party/unifont/OFL-1.1.txt "$DIST/hohnative/UNIFONT-OFL-1.1.txt"   # ideogramas (Unifont, OFL 1.1)
 "$ZIG" objcopy --strip-all build/r36s/hoh "$DIST/hohnative/hoh" 2>/dev/null || cp build/r36s/hoh "$DIST/hohnative/hoh"
 [ -s "$DIST/hohnative/hoh" ] || cp build/r36s/hoh "$DIST/hohnative/hoh"
 chmod +x "$DIST/hohnative/hoh" "$DIST/Head Over Heels (Nativo).sh"

@@ -47,6 +47,8 @@ Arquivos
 - hoh.exe        o jogo
 - hoh-viewer.exe visualizador dos sprites/sons do HoHOriginal.dat
 - SDL2.dll       biblioteca SDL 2.32.10 (zlib license, libsdl.org)
+- LICENSE.txt    licenca do codigo do port (MIT); nao cobre o jogo em si
+- UNIFONT-OFL-1.1.txt  licenca dos caracteres chineses
 
-Os caracteres chineses sao da GNU Unifont 18.0.01 (unifoundry.com/unifont), (c) Roman Czyborra,
-Paul Hardy e colaboradores, sob a SIL Open Font License 1.1 (ou GNU GPL 2+ com excecao para fontes).
+Os caracteres chineses sao da GNU Unifont 18.0.01 (unifoundry.com/unifont), de Roman Czyborra,
+Paul Hardy e colaboradores, sob a SIL Open Font License 1.1 (texto em UNIFONT-OFL-1.1.txt).

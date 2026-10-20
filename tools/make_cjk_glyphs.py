@@ -36,7 +36,8 @@ def main(argv):
         return 1
     with open(OUT, "w", encoding="utf-8", newline="\n") as o:
         o.write("// Gerado por tools/make_cjk_glyphs.py a partir da GNU Unifont 18.0.01 (unifoundry.com).\n")
-        o.write("// Unifont: SIL Open Font License 1.1 ou GNU GPL 2+ com excecao de fonte. Nao editar a mao.\n")
+        o.write("// Unifont (Roman Czyborra, Paul Hardy e colaboradores), usada sob a SIL Open Font License 1.1:\n")
+        o.write("// third_party/unifont/OFL-1.1.txt. Nao editar a mao.\n")
         o.write("// Cada glifo: 16 linhas de 16 bits (bit 15 = coluna 0).\n")
         for cp in wanted:
             rows = [int(glyphs[cp][i:i + 4], 16) for i in range(0, 64, 4)]
