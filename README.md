@@ -243,5 +243,9 @@ No R36S (SDL com KMSDRM) o modo portátil é detectado sozinho: tela cheia 640×
 
 ## Licença dos dados
 
-O jogo original é freeware e só pode ser redistribuído sem alterações. Este repositório
-contém apenas código próprio; os dados vêm da cópia do usuário.
+O jogo original (Head Over Heels, Retrospec 2003) é freeware e só pode ser redistribuído sem
+alterações. Este repositório contém o código do port, escrito a partir da análise do HoH.exe, e
+em `src/game/globals.cpp` os textos e tabelas iniciais extraídos do HoH.exe. Não contém os
+gráficos, os sons nem o `HoHOriginal.dat`: eles vêm da cópia do usuário (assim como os pacotes
+HD, gerados localmente a partir dela). Os ideogramas de `src/game/lang_cjk.inc` são da GNU
+Unifont (SIL Open Font License 1.1).
